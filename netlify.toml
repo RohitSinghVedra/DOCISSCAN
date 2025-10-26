@@ -2,11 +2,8 @@
   publish = "client/build"
   command = "cd client && npm install && npm run build"
 
-[[plugins]]
-  package = "@netlify/plugin-labs"
-
 [functions]
-  directory = "server"
+  directory = "netlify/functions"
   node_bundler = "esbuild"
 
 [build.environment]
