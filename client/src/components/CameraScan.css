@@ -1,0 +1,36 @@
+.method-selector {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.camera-container {
+  margin-top: 20px;
+}
+
+.camera-controls {
+  margin-top: 20px;
+}
+
+.upload-container {
+  margin-top: 20px;
+  text-align: center;
+  padding: 60px 40px;
+  border: 2px dashed #e0e0e0;
+  border-radius: 8px;
+  background: #f9f9f9;
+}
+
+.preview-container {
+  margin-top: 20px;
+}
+
+.preview-controls {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.preview-controls .btn {
+  flex: 1;
+}
