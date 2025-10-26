@@ -123,12 +123,6 @@ const CameraScan = ({ token, user }) => {
     }
   };
 
-  const clearPreview = () => {
-    setPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
 
   return (
     <div>

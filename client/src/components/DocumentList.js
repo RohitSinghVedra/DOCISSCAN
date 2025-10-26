@@ -10,6 +10,7 @@ const DocumentList = ({ token }) => {
 
   useEffect(() => {
     fetchDocuments();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchDocuments = async () => {
@@ -59,7 +60,7 @@ const DocumentList = ({ token }) => {
           </div>
         ) : documents.length === 0 ? (
           <div className="card">
-            <p>No documents yet. <a onClick={() => navigate('/scan')} style={{color: '#667eea', cursor: 'pointer'}}>Scan your first document</a></p>
+            <p>No documents yet. <button onClick={() => navigate('/scan')} style={{color: '#667eea', cursor: 'pointer', border: 'none', background: 'transparent', textDecoration: 'underline', padding: 0}}>Scan your first document</button></p>
           </div>
         ) : (
           documents.map((doc) => (
