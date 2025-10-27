@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyBEROHDreTZb7B1xaod8bJBDj4o85ieASI",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyBER0HDreTZb7B1xaod8bJBDj4085ieASI",
   authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "iddocscan.firebaseapp.com",
   projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "iddocscan",
   storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "iddocscan.firebasestorage.app",
