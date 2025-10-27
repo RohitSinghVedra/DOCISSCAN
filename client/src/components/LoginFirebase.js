@@ -1,32 +1,30 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase-config';
 import { toast } from 'react-toastify';
 
 const LoginFirebase = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [loading, setLoading] = React.useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setLoading(true);
+    const provider = new GoogleAuthProvider();
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const token = await userCredential.user.getIdToken();
+      const result = await signInWithPopup(auth, provider);
+      const token = await result.user.getIdToken();
       
       onLogin(token, {
-        id: userCredential.user.uid,
-        email: userCredential.user.email
+        id: result.user.uid,
+        email: result.user.email
       });
       
-      toast.success('Login successful!');
+      toast.success('Signed in successfully!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.message || 'Login failed');
+      toast.error(error.message || 'Sign in failed');
     } finally {
       setLoading(false);
     }
@@ -41,36 +39,18 @@ const LoginFirebase = ({ onLogin }) => {
             <p>Document Scanner for Indian IDs</p>
           </div>
           
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="your@email.com"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-              />
-            </div>
-            
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Logging in...' : 'Login'}
+          <div style={{textAlign: 'center', padding: '40px 20px'}}>
+            <p style={{marginBottom: '30px', color: '#666'}}>
+              Sign in with your Google account
+            </p>
+            <button 
+              onClick={handleGoogleSignIn} 
+              className="btn btn-primary" 
+              disabled={loading}
+              style={{width: '100%', fontSize: '16px', padding: '14px'}}
+            >
+              {loading ? 'Signing in...' : '📧 Continue with Google'}
             </button>
-          </form>
-          
-          <div className="link-text">
-            Don't have an account? <Link to="/register">Register here</Link>
           </div>
         </div>
       </div>

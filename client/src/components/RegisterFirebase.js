@@ -1,44 +1,30 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase-config';
 import { toast } from 'react-toastify';
 
 const RegisterFirebase = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [loading, setLoading] = React.useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-    
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
-    
+  const handleGoogleSignIn = async () => {
     setLoading(true);
+    const provider = new GoogleAuthProvider();
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const token = await userCredential.user.getIdToken();
+      const result = await signInWithPopup(auth, provider);
+      const token = await result.user.getIdToken();
       
       onLogin(token, {
-        id: userCredential.user.uid,
-        email: userCredential.user.email
+        id: result.user.uid,
+        email: result.user.email
       });
       
-      toast.success('Registration successful!');
+      toast.success('Signed in successfully!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.message || 'Registration failed');
+      toast.error(error.message || 'Sign in failed');
     } finally {
       setLoading(false);
     }
@@ -50,51 +36,21 @@ const RegisterFirebase = ({ onLogin }) => {
         <div className="card">
           <div className="card-header">
             <h1>📱 IDDocScan</h1>
-            <p>Create your account</p>
+            <p>Sign in to get started</p>
           </div>
           
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="your@email.com"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                minLength={6}
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>Confirm Password</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-              />
-            </div>
-            
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Registering...' : 'Register'}
+          <div style={{textAlign: 'center', padding: '40px 20px'}}>
+            <p style={{marginBottom: '30px', color: '#666'}}>
+              Sign in with your Google account to start scanning documents
+            </p>
+            <button 
+              onClick={handleGoogleSignIn} 
+              className="btn btn-primary" 
+              disabled={loading}
+              style={{width: '100%', fontSize: '16px', padding: '14px'}}
+            >
+              {loading ? 'Signing in...' : '📧 Continue with Google'}
             </button>
-          </form>
-          
-          <div className="link-text">
-            Already have an account? <Link to="/login">Login here</Link>
           </div>
         </div>
       </div>
