@@ -103,7 +103,7 @@ const extractAadhaarData = (text) => {
   }
   
   // Extract DOB
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-\/]\d{2}[-\/]\d{4})/i);
+  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
   if (dobMatch) {
     data.dateOfBirth = dobMatch[1];
   }
@@ -139,7 +139,7 @@ const extractPassportData = (text) => {
     data.name = nameMatch[1] || nameMatch[0];
   }
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-\/]\d{2}[-\/]\d{4})/i);
+  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
   if (dobMatch) {
     data.dateOfBirth = dobMatch[1];
   }
@@ -173,7 +173,7 @@ const extractPANData = (text) => {
     data.fatherName = fatherNameMatch[1];
   }
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-\/]\d{2}[-\/]\d{4})/i);
+  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
   if (dobMatch) {
     data.dateOfBirth = dobMatch[1];
   }
@@ -197,7 +197,7 @@ const extractDrivingLicenseData = (text) => {
     data.name = nameMatch[1] || nameMatch[0];
   }
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-\/]\d{2}[-\/]\d{4})/i);
+  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
   if (dobMatch) {
     data.dateOfBirth = dobMatch[1];
   }
@@ -247,8 +247,10 @@ export const cleanup = async () => {
   }
 };
 
-export default {
+const ocrService = {
   processDocument,
   cleanup
 };
+
+export default ocrService;
 

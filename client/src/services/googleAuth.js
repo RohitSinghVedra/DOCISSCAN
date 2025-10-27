@@ -180,7 +180,7 @@ export const appendToSpreadsheet = async (spreadsheetId, data) => {
   }
 };
 
-export default {
+const googleAuthService = {
   initGoogleAPI,
   signInGoogle,
   signOutGoogle,
@@ -189,4 +189,6 @@ export default {
   createSpreadsheet,
   appendToSpreadsheet
 };
+
+export default googleAuthService;
 

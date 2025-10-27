@@ -12,6 +12,7 @@ const Dashboard = ({ user, onLogout }) => {
 
   useEffect(() => {
     checkGoogleStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkGoogleStatus = async () => {
