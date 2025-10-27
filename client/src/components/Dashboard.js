@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { toast } from 'react-toastify';
+import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet } from '../services/googleAuth';
+import { db } from '../firebase-config';
 
 const Dashboard = ({ user, onLogout }) => {
   const [googleConnected, setGoogleConnected] = useState(false);
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -14,22 +16,63 @@ const Dashboard = ({ user, onLogout }) => {
 
   const checkGoogleStatus = async () => {
     try {
-      const response = await axios.get('/api/google/status', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      setGoogleConnected(response.data.connected);
-      setSpreadsheetUrl(response.data.spreadsheetUrl);
+      await initGoogleAPI();
+      const signedIn = isSignedIn();
+      setGoogleConnected(signedIn);
+
+      if (signedIn) {
+        // Check if user has a spreadsheet in Firestore
+        const userDoc = await db.collection('users').doc(user.id).get();
+        if (userDoc.exists && userDoc.data().spreadsheetUrl) {
+          setSpreadsheetUrl(userDoc.data().spreadsheetUrl);
+        }
+      }
     } catch (error) {
       console.error('Error checking Google status:', error);
+      // If Google API not loaded yet, that's okay - user hasn't connected yet
     }
   };
 
   const handleGoogleConnect = async () => {
+    setLoading(true);
     try {
-      const response = await axios.get('/api/google/oauth/url');
-      window.location.href = response.data.url;
+      // Sign in to Google
+      const response = await signInGoogle();
+      
+      if (response.isSignedIn()) {
+        // Check if user already has a spreadsheet
+        const userDoc = await db.collection('users').doc(user.id).get();
+        
+        let spreadsheetId, spreadsheetUrl;
+        
+        if (userDoc.exists && userDoc.data().spreadsheetId) {
+          // Use existing spreadsheet
+          spreadsheetId = userDoc.data().spreadsheetId;
+          spreadsheetUrl = userDoc.data().spreadsheetUrl;
+        } else {
+          // Create new spreadsheet
+          const result = await createSpreadsheet();
+          spreadsheetId = result.spreadsheetId;
+          spreadsheetUrl = result.spreadsheetUrl;
+          
+          // Save to Firestore
+          await db.collection('users').doc(user.id).set({
+            googleConnected: true,
+            spreadsheetId,
+            spreadsheetUrl,
+            updatedAt: new Date()
+          }, { merge: true });
+        }
+        
+        setGoogleConnected(true);
+        setSpreadsheetUrl(spreadsheetUrl);
+        toast.success('Google account connected successfully!');
+      }
     } catch (error) {
-      toast.error('Failed to initiate Google connection');
+      console.error('Error connecting Google:', error);
+      toast.error(error.message || 'Failed to connect Google account');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -61,8 +104,13 @@ const Dashboard = ({ user, onLogout }) => {
           </div>
 
           {!googleConnected && (
-            <button className="btn btn-primary" onClick={handleGoogleConnect} style={{marginBottom: '24px'}}>
-              Connect Google Account
+            <button 
+              className="btn btn-primary" 
+              onClick={handleGoogleConnect} 
+              disabled={loading}
+              style={{marginBottom: '24px'}}
+            >
+              {loading ? 'Connecting...' : 'Connect Google Account'}
             </button>
           )}
 
@@ -86,7 +134,6 @@ const Dashboard = ({ user, onLogout }) => {
             <h3>Scan Document</h3>
             <p>Camera or Upload</p>
           </div>
-
         </div>
       </div>
     </div>
