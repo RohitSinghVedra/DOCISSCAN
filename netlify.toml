@@ -5,15 +5,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  
-[[functions]]
-  path = "/api/*"
-  function = "api"
 
 [build.environment]
   NODE_VERSION = "18"
 
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/server/:splat"
-  status = 200
+# API routes don't need redirects since we're using frontend-only approach now
