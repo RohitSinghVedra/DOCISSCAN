@@ -4,13 +4,12 @@ A mobile-focused web application for scanning and extracting information from In
 
 ## Features
 
-- 🔐 User Authentication (Login/Register)
-- 🔗 Google Account Integration
+- 🔐 Google Sign-In Authentication
 - 📷 Camera and File Upload Support
-- 🤖 Automatic Document Type Recognition
-- 🌐 Multi-language Support (English, Hindi, and other Indian languages)
-- 📋 OCR Text Extraction
-- 📊 Google Sheets Integration
+- 🤖 Automatic Document Type Recognition (Aadhaar, Passport, PAN, etc.)
+- 🌐 Multi-language OCR Support (English, Hindi, and other Indian languages)
+- 📋 Structured Data Extraction
+- 📊 Auto-Save to Google Sheets
 - 📱 Mobile-Responsive Design
 - 🕒 Automatic Timestamp Recording
 
@@ -110,14 +109,14 @@ The application will be available at:
 
 ## Usage
 
-1. **Register/Login**: Create an account or login with existing credentials
-2. **Connect Google**: Click "Connect Google Account" to authorize access to Google Sheets
+1. **Sign In**: Click "Continue with Google" to sign in
+2. **Google Sheet Created**: Your personal sheet is automatically created
 3. **Scan Document**: 
    - Choose between camera or file upload
    - Point camera at document or select file
    - Click "Scan Document" to process
-4. **View Documents**: Check your scanned documents with extracted information
-5. **Automatic Saving**: All scanned documents are automatically saved to your Google Sheet with timestamps
+4. **View in Sheets**: Click "Open Google Sheet" to view all your scanned documents
+5. **Automatic Saving**: All scanned documents are automatically saved with timestamps
 
 ## API Endpoints
 
