@@ -1,18 +1,29 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { toast } from 'react-toastify';
+import { processDocument } from '../services/ocrService';
+import { appendToSpreadsheet, isSignedIn } from '../services/googleAuth';
+import { db } from '../firebase-config';
 import './CameraScan.css';
 
-const CameraScan = ({ token, user }) => {
+const CameraScan = ({ user }) => {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [method, setMethod] = useState('camera');
+  const [ocrProgress, setOcrProgress] = useState(0);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if Google is connected
+    if (!isSignedIn()) {
+      toast.warning('Please connect your Google account first to save documents');
+      navigate('/dashboard');
+    }
+  }, [navigate]);
 
   const startCamera = async () => {
     try {
@@ -67,37 +78,45 @@ const CameraScan = ({ token, user }) => {
       return;
     }
 
+    if (!isSignedIn()) {
+      toast.error('Please connect Google account first');
+      navigate('/dashboard');
+      return;
+    }
+
     setLoading(true);
+    setOcrProgress(0);
+
     try {
       // Convert preview URL to File
       const response = await fetch(preview);
       const blob = await response.blob();
-      const file = new File([blob], 'document.jpg', { type: 'image/jpeg' });
+      const file = new File([blob], 'document.jpg', { type: ' تحمل موقعات/jpeg' });
 
-      const formData = new FormData();
-      formData.append('image', file);
-
-      // Step 1: Process document with OCR
-      const processResponse = await axios.post('/api/documents/process', formData, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
+      toast.info('Processing document with OCR...');
+      
+      // Step 1: Process document with Tesseract.js OCR
+      const ocrResult = await processDocument(file);
+      
       toast.info('Saving to Google Sheets...');
-
-      // Step 2: Save to Google Sheets
-      const saveResponse = await axios.post('/api/google/sheets/save', {
-        data: processResponse.data
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
+      
+      // Step 2: Get user's spreadsheet ID from Firestore
+      const userDoc = await db.collection('users').doc(user.id).get();
+      if (!userDoc.exists || !userDoc.data().spreadsheetId) {
+        toast.error('Spreadsheet not found. Please connect Google account again.');
+        navigate('/dashboard');
+        return;
+      }
+      
+      const spreadsheetId = userDoc.data().spreadsheetId;
+      
+      // Step 3: Append to Google Sheets
+      await appendToSpreadsheet(spreadsheetId, ocrResult);
+      
+      const spreadsheetUrl = userDoc.data().spreadsheetUrl;
+      
       toast.success('Document saved to Google Sheets!', {
-        onClick: () => window.open(saveResponse.data.spreadsheetUrl, '_blank')
+        onClick: () => window.open(spreadsheetUrl, '_blank')
       });
 
       // Reset for next scan
@@ -110,9 +129,10 @@ const CameraScan = ({ token, user }) => {
 
     } catch (error) {
       console.error('Error:', error);
-      toast.error(error.response?.data?.message || 'Failed to process document');
+      toast.error(error.message || 'Failed to process document');
     } finally {
       setLoading(false);
+      setOcrProgress(0);
     }
   };
 
@@ -122,7 +142,6 @@ const CameraScan = ({ token, user }) => {
       startCamera();
     }
   };
-
 
   return (
     <div>
@@ -187,7 +206,7 @@ const CameraScan = ({ token, user }) => {
               <input
                 type="file"
                 ref={fileInputRef}
-                accept="image/*"
+                accept="image/* "+"
                 onChange={handleFileSelect}
                 style={{display: 'none'}}
               />
@@ -201,8 +220,19 @@ const CameraScan = ({ token, user }) => {
           {preview && (
             <div className="preview-container">
               <img src={preview} alt="Preview" style={{width: '100%', borderRadius: '8px'}} />
+              
+              {/* OCR Progress Bar */}
+              {loading && ocrProgress > 0 && (
+                <div style={{margin: '16px 0', padding: '8px', background: '#f0f0f0', borderRadius: '4px'}}>
+                  <div style={{fontSize: '12px', marginBottom: '4px', color: '#666'}}>Processing: {ocrProgress}%</div>
+                  <div style={{height: '8px', background: '#ddd', borderRadius: '4px', overflow: 'hidden'}}>
+                    <div style={{height: '100%', background: '#667eea', width: `${ocrProgress}%`, transition: 'width 0.3s'}}></div>
+                  </div>
+                </div>
+              )}
+              
               <div className="preview-controls">
-                <button className="btn btn-secondary" onClick={retakePhoto}>
+                <button className="btn btn-secondary" onClick={retakePhoto} disabled={loading}>
                   Retake
                 </button>
                 <button className="btn btn-primary" onClick={processImage} disabled={loading}>
