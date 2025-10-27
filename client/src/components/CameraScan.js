@@ -91,7 +91,7 @@ const CameraScan = ({ user }) => {
       // Convert preview URL to File
       const response = await fetch(preview);
       const blob = await response.blob();
-      const file = new File([blob], 'document.jpg', { type: ' تحمل موقعات/jpeg' });
+      const file = new File([blob], 'document.jpg', { type: 'image/jpeg' });
 
       toast.info('Processing document with OCR...');
       
@@ -206,7 +206,7 @@ const CameraScan = ({ user }) => {
               <input
                 type="file"
                 ref={fileInputRef}
-                accept="image/* "+"
+                accept="image/*"
                 onChange={handleFileSelect}
                 style={{display: 'none'}}
               />
