@@ -34,11 +34,22 @@ const CameraScan = ({ user }) => {
     }
   }, [navigate]);
 
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopCamera();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startCamera = async () => {
@@ -58,16 +69,6 @@ const CameraScan = ({ user }) => {
     } catch (error) {
       toast.error('Camera access denied or not available');
       console.error('Camera error:', error);
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
     }
   };
 
