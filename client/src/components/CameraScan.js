@@ -62,9 +62,23 @@ const CameraScan = ({ user }) => {
         } 
       });
       setStream(mediaStream);
+      
+      // Wait for video element to be available
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.play();
+        
+        // Ensure video plays
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play().catch(err => {
+            console.error('Video play error:', err);
+            toast.error('Failed to start video preview');
+          });
+        };
+        
+        // Also try to play immediately
+        videoRef.current.play().catch(err => {
+          console.error('Video play error:', err);
+        });
       }
     } catch (error) {
       toast.error('Camera access denied or not available');
@@ -323,16 +337,20 @@ const CameraScan = ({ user }) => {
               {method === 'camera' && (
                 <div className="camera-container">
                   {stream && (
-                    <div style={{position: 'relative', width: '100%', marginBottom: '20px'}}>
+                    <div style={{position: 'relative', width: '100%', marginBottom: '20px', background: '#000', borderRadius: '8px', overflow: 'hidden'}}>
                       <video 
                         ref={videoRef} 
                         autoPlay 
                         playsInline 
+                        muted
                         style={{
                           width: '100%',
+                          height: 'auto',
+                          minHeight: '400px',
+                          display: 'block',
                           borderRadius: '8px',
-                          maxHeight: '60vh',
-                          objectFit: 'contain'
+                          objectFit: 'cover',
+                          backgroundColor: '#000'
                         }}
                       />
                       {/* Focus overlay */}
