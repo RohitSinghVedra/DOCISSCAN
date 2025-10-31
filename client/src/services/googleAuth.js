@@ -16,6 +16,10 @@ export const initGoogleAPI = () => {
       return;
     }
 
+    // Log for debugging
+    console.log('Initializing Google API with Client ID:', CLIENT_ID.substring(0, 30) + '...');
+    console.log('Current origin:', window.location.origin);
+
     gapi.load('client:auth2', () => {
       gapi.client.init({
         apiKey: API_KEY,
@@ -23,8 +27,17 @@ export const initGoogleAPI = () => {
         discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
         scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email'
       }).then(() => {
+        console.log('Google API initialized successfully');
         resolve(gapi);
-      }).catch(reject);
+      }).catch((error) => {
+        console.error('Google API initialization error:', error);
+        console.error('Error details:', {
+          error: error.error,
+          details: error.details,
+          message: error.message
+        });
+        reject(error);
+      });
     });
   });
 };
