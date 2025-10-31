@@ -22,12 +22,18 @@ const getWorker = async () => {
   return worker;
 };
 
-// Process document image
-export const processDocument = async (imageFile) => {
+// Process document image with progress callback
+export const processDocument = async (imageFile, onProgress = null) => {
   try {
     const worker = await getWorker();
     
-    const { data } = await worker.recognize(imageFile);
+    const { data } = await worker.recognize(imageFile, {
+      logger: m => {
+        if (onProgress && m.status === 'recognizing text') {
+          onProgress(m.progress);
+        }
+      }
+    });
     
     const rawText = data.text;
     const documentType = identifyDocumentType(rawText);
