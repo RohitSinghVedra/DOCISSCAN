@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet } from '../services/googleAuth';
 import { db } from '../firebase-config';
-import { collection, doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const Dashboard = ({ user, onLogout }) => {
   const [googleConnected, setGoogleConnected] = useState(false);
