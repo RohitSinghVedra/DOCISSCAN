@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet } from '../services/googleAuth';
 import { db } from '../firebase-config';
+import { collection, doc, getDoc, setDoc } from 'firebase/firestore';
 
 const Dashboard = ({ user, onLogout }) => {
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -23,8 +24,9 @@ const Dashboard = ({ user, onLogout }) => {
 
       if (signedIn) {
         // Check if user has a spreadsheet in Firestore
-        const userDoc = await db.collection('users').doc(user.id).get();
-        if (userDoc.exists && userDoc.data().spreadsheetUrl) {
+        const userDocRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists() && userDoc.data().spreadsheetUrl) {
           setSpreadsheetUrl(userDoc.data().spreadsheetUrl);
         }
       }
@@ -42,11 +44,12 @@ const Dashboard = ({ user, onLogout }) => {
       
       if (response && response.accessToken) {
         // Check if user already has a spreadsheet
-        const userDoc = await db.collection('users').doc(user.id).get();
+        const userDocRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userDocRef);
         
         let spreadsheetId, spreadsheetUrl;
         
-        if (userDoc.exists && userDoc.data().spreadsheetId) {
+        if (userDoc.exists() && userDoc.data().spreadsheetId) {
           // Use existing spreadsheet
           spreadsheetId = userDoc.data().spreadsheetId;
           spreadsheetUrl = userDoc.data().spreadsheetUrl;
@@ -57,7 +60,7 @@ const Dashboard = ({ user, onLogout }) => {
           spreadsheetUrl = result.spreadsheetUrl;
           
           // Save to Firestore
-          await db.collection('users').doc(user.id).set({
+          await setDoc(userDocRef, {
             googleConnected: true,
             spreadsheetId,
             spreadsheetUrl,
