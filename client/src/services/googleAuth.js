@@ -16,9 +16,15 @@ export const initGoogleAPI = () => {
       return;
     }
 
-    // Log for debugging
-    console.log('Initializing Google API with Client ID:', CLIENT_ID.substring(0, 30) + '...');
+    // Log for debugging - show full Client ID for verification
+    console.log('=== Google API Initialization ===');
+    console.log('Full Client ID:', CLIENT_ID);
+    console.log('Expected Client ID (from Google Console): 29205515218-569db55486d5apli4uqn2uvm3dqg0gbg.apps.googleusercontent.com');
+    console.log('Client ID Match:', CLIENT_ID === '29205515218-569db55486d5apli4uqn2uvm3dqg0gbg.apps.googleusercontent.com');
     console.log('Current origin:', window.location.origin);
+    console.log('Expected origin: https://docidscan.netlify.app');
+    console.log('Origin Match:', window.location.origin === 'https://docidscan.netlify.app');
+    console.log('================================');
 
     gapi.load('client:auth2', () => {
       gapi.client.init({
