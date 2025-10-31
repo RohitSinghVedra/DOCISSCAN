@@ -37,10 +37,10 @@ const Dashboard = ({ user, onLogout }) => {
   const handleGoogleConnect = async () => {
     setLoading(true);
     try {
-      // Sign in to Google
+      // Sign in to Google using OAuth 2.0
       const response = await signInGoogle();
       
-      if (response.isSignedIn()) {
+      if (response && response.accessToken) {
         // Check if user already has a spreadsheet
         const userDoc = await db.collection('users').doc(user.id).get();
         

@@ -1,92 +1,110 @@
 /**
  * Google OAuth and Sheets API Service
  * Handles Google authentication and Sheets operations directly from frontend
+ * Uses Google Identity Services (GIS) for authentication and gapi.client for Sheets API
  */
 
 import { gapi } from 'gapi-script';
 
-// Initialize Google API Client
+let accessToken = null;
+let gapiInitialized = false;
+
+// Initialize Google API Client for Sheets API (no auth2)
 export const initGoogleAPI = () => {
   return new Promise((resolve, reject) => {
     const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;
-    const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
     
-    if (!CLIENT_ID) {
-      reject(new Error('Google Client ID not configured'));
+    if (gapiInitialized) {
+      resolve(gapi);
       return;
     }
 
-    // Log for debugging - show full Client ID for verification
-    console.log('=== Google API Initialization ===');
-    console.log('Full Client ID:', CLIENT_ID);
-    console.log('Expected Client ID (from Google Console): 29205515218-569db55486d5apli4uqn2uvm3dqg0gbg.apps.googleusercontent.com');
-    console.log('Client ID Match:', CLIENT_ID === '29205515218-569db55486d5apli4uqn2uvm3dqg0gbg.apps.googleusercontent.com');
-    console.log('Current origin:', window.location.origin);
-    console.log('Expected origin: https://docidscan.netlify.app');
-    console.log('Origin Match:', window.location.origin === 'https://docidscan.netlify.app');
-    console.log('================================');
-
-    gapi.load('client:auth2', () => {
+    // Initialize gapi.client without auth2 (we'll use OAuth 2.0 tokens)
+    gapi.load('client', () => {
       gapi.client.init({
         apiKey: API_KEY,
-        clientId: CLIENT_ID,
-        discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
-        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email'
+        discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4']
       }).then(() => {
-        console.log('Google API initialized successfully');
+        console.log('Google Sheets API initialized successfully');
+        gapiInitialized = true;
         resolve(gapi);
       }).catch((error) => {
         console.error('Google API initialization error:', error);
-        console.error('Error details:', {
-          error: error.error,
-          details: error.details,
-          message: error.message
-        });
         reject(error);
       });
     });
   });
 };
 
-// Sign in user with Google
+// Sign in using OAuth 2.0 (Google Identity Services compatible)
 export const signInGoogle = async () => {
-  try {
-    await initGoogleAPI();
-    const authInstance = gapi.auth2.getAuthInstance();
-    const response = await authInstance.signIn();
-    return response;
-  } catch (error) {
-    throw error;
-  }
+  return new Promise((resolve, reject) => {
+    const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+    
+    const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+      callback: async (tokenResponse) => {
+        if (tokenResponse.error) {
+          reject(new Error(tokenResponse.error));
+          return;
+        }
+        
+        accessToken = tokenResponse.access_token;
+        
+        // Set token for gapi.client
+        gapi.client.setToken({ access_token: accessToken });
+        
+        // Initialize Sheets API
+        await initGoogleAPI();
+        
+        resolve({
+          accessToken,
+          expiresIn: tokenResponse.expires_in
+        });
+      }
+    });
+
+    tokenClient.requestAccessToken();
+  });
 };
 
 // Sign out user
 export const signOutGoogle = async () => {
   try {
-    const authInstance = gapi.auth2.getAuthInstance();
-    await authInstance.signOut();
+    if (accessToken) {
+      // Revoke the token
+      window.google.accounts.oauth2.revoke(accessToken, () => {
+        console.log('Token revoked');
+      });
+    }
+    accessToken = null;
+    gapi.client.setToken(null);
   } catch (error) {
-    throw error;
+    console.error('Error signing out:', error);
   }
 };
 
 // Check if user is signed in
 export const isSignedIn = () => {
-  try {
-    const authInstance = gapi.auth2.getAuthInstance();
-    return authInstance.isSignedIn.get();
-  } catch (error) {
-    return false;
-  }
+  return accessToken !== null && gapi.client.getToken() !== null;
 };
 
 // Get current user
-export const getCurrentUser = () => {
+export const getCurrentUser = async () => {
   try {
-    const authInstance = gapi.auth2.getAuthInstance();
-    const user = authInstance.currentUser.get();
-    return user;
+    if (!isSignedIn()) {
+      return null;
+    }
+    
+    const userInfo = await gapi.client.request({
+      path: 'https://www.googleapis.com/oauth2/v2/userinfo',
+      method: 'GET'
+    });
+    
+    return userInfo.result;
   } catch (error) {
+    console.error('Error getting user:', error);
     return null;
   }
 };
