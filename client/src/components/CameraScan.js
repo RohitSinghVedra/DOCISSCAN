@@ -44,6 +44,26 @@ const CameraScan = ({ user }) => {
     }
   };
 
+  // Update video when stream changes
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current.play().catch(err => {
+          console.error('Video play error:', err);
+        });
+      };
+      videoRef.current.play().catch(err => {
+        console.error('Video play error:', err);
+      });
+    }
+    return () => {
+      if (videoRef.current && !stream) {
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [stream]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -62,24 +82,6 @@ const CameraScan = ({ user }) => {
         } 
       });
       setStream(mediaStream);
-      
-      // Wait for video element to be available
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        
-        // Ensure video plays
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play().catch(err => {
-            console.error('Video play error:', err);
-            toast.error('Failed to start video preview');
-          });
-        };
-        
-        // Also try to play immediately
-        videoRef.current.play().catch(err => {
-          console.error('Video play error:', err);
-        });
-      }
     } catch (error) {
       toast.error('Camera access denied or not available');
       console.error('Camera error:', error);
