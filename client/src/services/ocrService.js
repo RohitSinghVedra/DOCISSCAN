@@ -47,7 +47,8 @@ export const processDocument = async (imageFile, onProgress = null) => {
     };
   } catch (error) {
     console.error('OCR Error:', error);
-    throw new Error('Failed to process document: ' + error.message);
+    const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+    throw new Error('Failed to process document: ' + errorMessage);
   }
 };
 

@@ -137,9 +137,11 @@ const CameraScan = ({ user }) => {
     setIsProcessing(true);
     setOcrProgress(0);
     
+    let progressInterval = null;
+    
     try {
       // Simulate progress for better UX
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setOcrProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
@@ -148,7 +150,9 @@ const CameraScan = ({ user }) => {
         setOcrProgress(Math.round(progress * 100));
       });
 
-      clearInterval(progressInterval);
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setOcrProgress(100);
 
       // Update extracted data
@@ -176,8 +180,20 @@ const CameraScan = ({ user }) => {
       }
     } catch (error) {
       console.error('OCR error:', error);
-      toast.error(`Failed to process ${side} side`);
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      toast.error(`Failed to process ${side} side: ${errorMessage}`);
+      
+      // Reset state on error
+      if (side === 'front') {
+        setCapturedImages({ front: null, back: null });
+        setExtractedData({ front: null, back: null });
+        setDocumentType(null);
+        setShowPreview(false);
+      }
     } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setIsProcessing(false);
       setOcrProgress(0);
     }
