@@ -62,19 +62,62 @@ export const processDocument = async (imageFile, onProgress = null) => {
   }
 };
 
-// Identify document type based on text content
+// Clean and normalize text for better matching
+const cleanText = (text) => {
+  return text
+    .replace(/\s+/g, ' ')  // Normalize whitespace
+    .replace(/[<>]/g, ' ')  // Replace < > with spaces (common OCR error)
+    .replace(/\$/g, '')     // Remove $ symbols (common OCR error)
+    .trim();
+};
+
+// Identify document type based on text content (more flexible patterns)
 const identifyDocumentType = (text) => {
-  const upperText = text.toUpperCase();
+  const upperText = cleanText(text).toUpperCase();
   
-  if (upperText.includes('AADHAAR') || upperText.includes('आधार')) {
-    return 'aadhaar';
-  } else if (upperText.includes('PASSPORT') || upperText.includes('पासपोर्ट')) {
+  // Check for Passport - multiple indicators including MRZ line
+  if (upperText.includes('PASSPORT') || 
+      upperText.includes('पासपोर्ट') ||
+      /P<[A-Z]{3}/.test(text) ||  // MRZ line pattern: P<IND
+      upperText.includes('REPUBLIC OF INDIA') ||
+      upperText.includes('P<INDIAN') ||
+      /\$\d{7,8}/.test(text) ||  // Passport number pattern: $1234567
+      /[A-Z]\d{7,8}\b/.test(upperText)) {  // Format like A1234567
     return 'passport';
-  } else if (upperText.includes('PERMANENT ACCOUNT NUMBER') || upperText.includes('पैन')) {
+  }
+  
+  // Check for Aadhaar
+  if (upperText.includes('AADHAAR') || 
+      upperText.includes('आधार') ||
+      upperText.includes('AADHAR') ||
+      /\d{4}\s?\d{4}\s?\d{4}/.test(text)) {  // Aadhaar number pattern
+    return 'aadhaar';
+  }
+  
+  // Check for PAN
+  if (upperText.includes('PERMANENT ACCOUNT NUMBER') || 
+      upperText.includes('पैन') ||
+      upperText.includes('PAN') ||
+      upperText.includes('INCOME TAX') ||
+      /[A-Z]{5}\d{4}[A-Z]/.test(upperText)) {  // PAN format: ABCDE1234F
     return 'pan';
-  } else if (upperText.includes('DRIVING LICENSE') || upperText.includes('ड्राइविंग लाइसेंस')) {
+  }
+  
+  // Check for Driving License
+  if (upperText.includes('DRIVING LICENSE') || 
+      upperText.includes('ड्राइविंग लाइसेंस') ||
+      upperText.includes('DRIVING LICENCE') ||
+      upperText.includes('DL NO') ||
+      /[A-Z]{2}\d{2}\d{4}\d{7}/.test(upperText)) {  // DL format: XXYYNNNNNNNNNNN
     return 'driving_license';
-  } else if (upperText.includes('VOTER') || upperText.includes('मतदाता')) {
+  }
+  
+  // Check for Voter ID
+  if (upperText.includes('VOTER') || 
+      upperText.includes('मतदाता') ||
+      upperText.includes('EPIC') ||
+      upperText.includes('ELECTOR') ||
+      /[A-Z]{3}\d{7}/.test(upperText)) {  // Voter ID format: XXX1234567
     return 'voter_id';
   }
   
@@ -221,58 +264,86 @@ const extractAadhaarData = (text) => {
 // Extract Passport data
 const extractPassportData = (text) => {
   const data = {};
+  const cleanedText = cleanText(text);
 
-  // Extract Passport Number - various formats: A12345678, a-1234567, Passport No: A12345678, etc.
+  // Extract Passport Number - handle OCR errors like $, J=, etc.
   const passportRegexes = [
-    /\bPassport\s*(?:No|Number|#)?[:\s]*([A-Z0-9-]+)/i,
-    /\b[A-Z]\d{8}\b/,
-    /\b[A-Z][-\s]?\d{7,9}\b/,
+    /Passport\s*(?:No|Number|#)?[:\s]*([A-Z0-9-]+)/i,
+    /[=:]\s*\$?\s*([A-Z0-9]{7,9})\b/,  // Handle "J = $3879331" or "= 3879331"
+    /\$\s*([0-9]{7,9})\b/,  // Handle "$3879331"
+    /\b([A-Z]\d{7,9})\b/,  // Format: A12345678
+    /([A-Z]\s?\d{7,9})\b/,
     /Passport\s+[A-Za-z]+\s+([A-Z0-9-]+)/i
   ];
   
   for (const regex of passportRegexes) {
-    const match = text.match(regex);
+    const match = cleanedText.match(regex);
     if (match) {
-      data.passportNumber = match[1] || match[0];
-      data.passportNumber = data.passportNumber.replace(/Passport\s*/i, '').trim();
-      break;
-    }
-  }
-
-  // Extract Name - look for patterns like "Given Name(s)", "ROHIT", "Name:", etc.
-  // Priority: Given Name > Name: > standalone uppercase words (2+ words)
-  const namePatterns = [
-    /(?:Given\s+Name|Given\s+Name\(s\))[:\s]+([A-Z\s]{3,})/i,
-    /(?:नाम|Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /\b([A-Z][A-Z\s]{2,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA)/i,
-    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/,
-    /SINGH\s+([A-Z][A-Z\s]+)/i
-  ];
-  
-  for (const pattern of namePatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      let name = match[1].trim();
-      // Skip common false positives
-      if (!name.match(/^(REPUBLIC|OF|INDIA|PASSPORT|REPUBLIC OF|DATE|BIRTH)$/i)) {
-        data.name = name;
+      let passportNum = (match[1] || match[0]).replace(/Passport\s*/i, '').replace(/\$/g, '').trim();
+      if (passportNum.length >= 7 && passportNum.length <= 9) {
+        data.passportNumber = passportNum;
         break;
       }
     }
   }
 
-  // Extract Date of Birth - look for DD/MM/YYYY or DD-MM-YYYY patterns near Birth keywords
-  const dobPatterns = [
-    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Birth)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
-    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|Date\s+of\s+Birth)/i,
-    /(?:Birth|जन्म)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  // Extract Name - handle various patterns including common Indian names
+  const namePatterns = [
+    /(?:Given\s+Name|Given\s+Name\(s\))[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:नाम|Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z]{3,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA|VERMA|YADAV|GUPTA|MISHRA|JHA)\b/i,
+    /\b(?:SINGH|KUMAR|SHARMA|PATEL)\s+([A-Z][A-Z]{2,})\b/i,  // "SINGH ROHIT"
+    /\b([A-Z]{3,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA)\b/i,  // "ROHIT SINGH"
+    /\b([A-Z]{3,}\s+[A-Z]{3,})\b(?!\s+(?:OF|INDIA|REPUBLIC|BIRTH|DATE))/i,  // Two uppercase words, excluding false positives
+    /SINGH\s+([A-Z][A-Z]{2,})\b/i,
+    /\b([A-Z]{3,})\s+SINGH\b/i
   ];
   
+  for (const pattern of namePatterns) {
+    const match = cleanedText.match(pattern);
+    if (match) {
+      let name = match[1] ? match[1].trim() : match[0].trim();
+      // Skip common false positives
+      if (name && 
+          !name.match(/^(REPUBLIC|OF|INDIA|PASSPORT|REPUBLIC OF|DATE|BIRTH|P<IND|DEHRADUN|DUBAI|M\s*\d+|गा|सिर|Ee|gi)$/i) &&
+          name.length >= 3) {
+        // Try to get full name if we found surname or first name
+        const fullNameMatch = cleanedText.match(new RegExp(`\\b(${name}\\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA))\\b`, 'i'));
+        if (fullNameMatch) {
+          name = fullNameMatch[1];
+        }
+        data.name = name.toUpperCase();
+        break;
+      }
+    }
+  }
+
+  // Extract Date of Birth - look for DD/MM/YYYY or DD-MM-YYYY patterns
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Birth)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|Date\s+of\s+Birth|DOB|M\s*\d{1,2}\/\d{2}\/\d{4})/i,
+    /(?:Birth|जन्म)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i,
+    /\b(\d{2}\/\d{2}\/\d{4})\b(?=\s|$)/  // Standalone date pattern DD/MM/YYYY
+  ];
+  
+  // Find all dates and use context to identify DOB
+  const allDates = cleanedText.match(/\b\d{2}[-/]\d{2}[-/]\d{4}\b/g);
+  if (allDates && allDates.length > 0) {
+    // First date in reasonable range (1900-2010) is likely DOB
+    for (const date of allDates) {
+      const year = parseInt(date.split(/[-/]/)[2]);
+      if (year >= 1900 && year <= 2010) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
+  }
+  
+  // Also try keyword-based extraction
   for (const pattern of dobPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const date = match[1] || match[0];
-      // Validate date format
       if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
         data.dateOfBirth = date;
         break;
@@ -280,52 +351,80 @@ const extractPassportData = (text) => {
     }
   }
 
-  // Extract Issue Date - look for dates near Issue keywords
+  // Extract Issue Date - look for dates near Issue keywords or before 2020
   const issueDatePatterns = [
     /(?:Date\s+of\s+Issue|Issue\s+Date|जारी\s+तिथि|Issued)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
     /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Issue|जारी|Date\s+of\s+Issue)/i,
     /(?:Issue|जारी)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
   ];
   
+  // Find dates and identify issue date (usually between 2000-2020)
+  if (allDates && allDates.length >= 2) {
+    for (const date of allDates) {
+      const year = parseInt(date.split(/[-/]/)[2]);
+      if (year >= 2000 && year <= 2020 && date !== data.dateOfBirth) {
+        data.issueDate = date;
+        break;
+      }
+    }
+  }
+  
+  // Also try keyword-based extraction
   for (const pattern of issueDatePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const date = match[1] || match[0];
-      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/) && date !== data.dateOfBirth) {
         data.issueDate = date;
         break;
       }
     }
   }
 
-  // Extract Expiry Date - look for dates near Expiry/Valid keywords
+  // Extract Expiry Date - look for dates near Expiry/Valid keywords or after 2020
   const expiryDatePatterns = [
     /(?:Date\s+of\s+Expiry|Expiry\s+Date|Expires|Valid\s+until|Valid\s+upto)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
     /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Expiry|Expires|Valid)/i
   ];
   
+  // Find dates and identify expiry date (usually after 2020 or issue date + 10 years)
+  if (allDates && allDates.length >= 2) {
+    for (const date of allDates) {
+      const year = parseInt(date.split(/[-/]/)[2]);
+      if ((year >= 2020 || year >= 2025) && date !== data.dateOfBirth && date !== data.issueDate) {
+        data.expiryDate = date;
+        break;
+      }
+    }
+  }
+  
+  // Also try keyword-based extraction
   for (const pattern of expiryDatePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const date = match[1] || match[0];
-      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/) && date !== data.dateOfBirth && date !== data.issueDate) {
         data.expiryDate = date;
         break;
       }
     }
   }
 
-  // Extract Place of Issue
+  // Extract Place of Issue - handle common Indian cities and OCR errors
   const placePatterns = [
     /(?:Place\s+of\s+Issue|Place\s+of\s+Birth|जारी\s+करने\s+का\s+स्थान)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /(?:DEHRADUN|DELHI|MUMBAI|KOLKATA|CHENNAI|BANGALORE|HYDERABAD|PUNE|AHMEDABAD|JAIPUR|LUCKNOW|KANPUR|NAGPUR|INDORE|THANE|BHOPAL|VISAKHAPATNAM|PATNA|VADODARA|GHAZIABAD|LUDHIANA|AGRA|NASHIK|FARIDABAD|MEERUT|RAJKOT|VARANASI|SRINAGAR|AMRITSAR|NOIDA|RANCHI|CHANDIGARH|JABALPUR|GWALIOR|RAIPUR|KOTA|BAREILLY|MORADABAD|MYSORE|GURGAON|ALIGARH|JALANDHAR|TIRUCHIRAPALLI|BHUBANESWAR|SALEM|WARANGAL|MIRA-BHAYANDAR|THIRUVANANTHAPURAM|BIHAR|SHARIF|RAIPUR|SAHARANPUR|JODHPUR|NAGPUR|DUBAI)/i
+    /\b(DEHRADUN|DELHI|MUMBAI|KOLKATA|CHENNAI|BANGALORE|HYDERABAD|PUNE|AHMEDABAD|JAIPUR|LUCKNOW|KANPUR|NAGPUR|INDORE|THANE|BHOPAL|VISAKHAPATNAM|PATNA|VADODARA|GHAZIABAD|LUDHIANA|AGRA|NASHIK|FARIDABAD|MEERUT|RAJKOT|VARANASI|SRINAGAR|AMRITSAR|NOIDA|RANCHI|CHANDIGARH|JABALPUR|GWALIOR|RAIPUR|KOTA|BAREILLY|MORADABAD|MYSORE|GURGAON|ALIGARH|JALANDHAR|TIRUCHIRAPALLI|BHUBANESWAR|SALEM|WARANGAL|MIRA-BHAYANDAR|THIRUVANANTHAPURAM|BIHAR|SHARIF|SAHARANPUR|JODHPUR|DUBAI|BANGALURU)\b/i
   ];
   
   for (const pattern of placePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      data.placeOfIssue = match[1] || match[0];
-      break;
+      let place = (match[1] || match[0]).trim();
+      // Skip if it's part of a date or number
+      if (!place.match(/^\d/)) {
+        data.placeOfIssue = place.toUpperCase();
+        break;
+      }
     }
   }
 
