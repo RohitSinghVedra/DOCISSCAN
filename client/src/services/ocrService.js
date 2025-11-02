@@ -224,10 +224,10 @@ const extractPassportData = (text) => {
 
   // Extract Passport Number - various formats: A12345678, a-1234567, Passport No: A12345678, etc.
   const passportRegexes = [
-    /\bPassport\s*(?:No|Number|#)?[:\s]*([A-Z0-9\-]+)/i,
+    /\bPassport\s*(?:No|Number|#)?[:\s]*([A-Z0-9-]+)/i,
     /\b[A-Z]\d{8}\b/,
     /\b[A-Z][-\s]?\d{7,9}\b/,
-    /Passport\s+[A-Za-z]+\s+([A-Z0-9\-]+)/i
+    /Passport\s+[A-Za-z]+\s+([A-Z0-9-]+)/i
   ];
   
   for (const regex of passportRegexes) {
