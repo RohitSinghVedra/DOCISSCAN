@@ -8,15 +8,23 @@ import Tesseract from 'tesseract.js';
 // Initialize Tesseract worker
 let worker = null;
 
+// Global variable to hold the current onProgress callback
+// This avoids closure capture issues when passing logger to Web Worker
+let currentOnProgressCallback = null;
+
+// A non-capturing logger function for Tesseract.js
+// This function doesn't capture any variables from its closure
+const tesseractLogger = m => {
+  // Reference the global variable instead of capturing it
+  if (currentOnProgressCallback && m.status === 'recognizing text') {
+    currentOnProgressCallback(m.progress);
+  }
+};
+
 const getWorker = async () => {
   if (!worker) {
     worker = await Tesseract.createWorker('eng+hin', 1, {
-      logger: m => {
-        // Log progress if needed
-        if (m.status === 'recognizing text') {
-          console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
-        }
-      }
+      logger: tesseractLogger
     });
   }
   return worker;
@@ -24,15 +32,14 @@ const getWorker = async () => {
 
 // Process document image with progress callback
 export const processDocument = async (imageFile, onProgress = null) => {
+  // Set the global callback for this recognition process
+  currentOnProgressCallback = onProgress;
+  
   try {
     const worker = await getWorker();
     
     const { data } = await worker.recognize(imageFile, {
-      logger: m => {
-        if (onProgress && m.status === 'recognizing text') {
-          onProgress(m.progress);
-        }
-      }
+      logger: tesseractLogger
     });
     
     const rawText = data.text;
@@ -49,6 +56,9 @@ export const processDocument = async (imageFile, onProgress = null) => {
     console.error('OCR Error:', error);
     const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
     throw new Error('Failed to process document: ' + errorMessage);
+  } finally {
+    // Clear the global callback after recognition is complete or on error
+    currentOnProgressCallback = null;
   }
 };
 
