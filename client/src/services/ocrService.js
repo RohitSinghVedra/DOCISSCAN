@@ -281,48 +281,46 @@ export const processDocument = async (imageFile, onProgress = null) => {
     let rawText = '';
     let confidence = 0;
     
-    // Try OCR.space API first (free, no API key needed)
-    if (OCR_PROVIDER === 'ocrspace' || !OCR_PROVIDER || OCR_PROVIDER === '') {
-      try {
-        if (onProgress) onProgress(0.3);
-        console.log('Using OCR.space API...');
-        const result = await performOCRSpace(imageFile);
-        rawText = result.text;
-        confidence = result.confidence;
-        if (onProgress) onProgress(1);
-      } catch (error) {
-        console.warn('OCR.space failed, trying next option:', error);
-        // Continue to next provider
+    // ALWAYS try OCR.space API first (FREE, no API key needed)
+    // This is the default and free option
+    try {
+      if (onProgress) onProgress(0.3);
+      console.log('Using OCR.space API (FREE)...');
+      const result = await performOCRSpace(imageFile);
+      rawText = result.text;
+      confidence = result.confidence;
+      if (onProgress) onProgress(1);
+    } catch (error) {
+      console.warn('OCR.space (free) failed, trying other options:', error);
+      
+      // Only try other providers if specifically requested and OCR.space failed
+      
+      // Try OpenAI GPT-4 Vision if specifically requested
+      if (OCR_PROVIDER === 'openai' && process.env.REACT_APP_OPENAI_API_KEY) {
+        try {
+          if (onProgress) onProgress(0.3);
+          console.log('Using OpenAI GPT-4 Vision API...');
+          const result = await performOpenAIVision(imageFile);
+          rawText = result.text;
+          confidence = result.confidence;
+          if (onProgress) onProgress(1);
+        } catch (error) {
+          console.warn('OpenAI Vision failed:', error);
+        }
       }
-    }
-    
-    // Try OpenAI GPT-4 Vision if configured
-    if ((!rawText || OCR_PROVIDER === 'openai') && process.env.REACT_APP_OPENAI_API_KEY) {
-      try {
-        if (onProgress) onProgress(0.3);
-        console.log('Using OpenAI GPT-4 Vision API...');
-        const result = await performOpenAIVision(imageFile);
-        rawText = result.text;
-        confidence = result.confidence;
-        if (onProgress) onProgress(1);
-      } catch (error) {
-        console.warn('OpenAI Vision failed, trying next option:', error);
-        // Continue to next provider
-      }
-    }
-    
-    // Try Google Vision API if configured (requires billing)
-    if ((!rawText || OCR_PROVIDER === 'google') && process.env.REACT_APP_GOOGLE_VISION_API_KEY) {
-      try {
-        if (onProgress) onProgress(0.3);
-        console.log('Using Google Vision API...');
-        const result = await performGoogleVision(imageFile);
-        rawText = result.text;
-        confidence = result.confidence;
-        if (onProgress) onProgress(1);
-      } catch (error) {
-        console.warn('Google Vision failed, trying next option:', error);
-        // Continue to next provider
+      
+      // Try Google Vision API if specifically requested (requires billing)
+      if (OCR_PROVIDER === 'google' && process.env.REACT_APP_GOOGLE_VISION_API_KEY && !rawText) {
+        try {
+          if (onProgress) onProgress(0.3);
+          console.log('Using Google Vision API...');
+          const result = await performGoogleVision(imageFile);
+          rawText = result.text;
+          confidence = result.confidence;
+          if (onProgress) onProgress(1);
+        } catch (error) {
+          console.warn('Google Vision failed:', error);
+        }
       }
     }
     
