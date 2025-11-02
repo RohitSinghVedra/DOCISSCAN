@@ -5,6 +5,61 @@
 
 import { createWorker } from 'tesseract.js';
 
+// Preprocess image for better OCR accuracy
+const preprocessImage = async (imageFile) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      
+      // Draw image
+      ctx.drawImage(img, 0, 0);
+      
+      // Get image data for processing
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      // Apply image enhancement
+      for (let i = 0; i < data.length; i += 4) {
+        // Increase contrast
+        const factor = 1.5;
+        const contrast = 128;
+        data[i] = Math.min(255, Math.max(0, (data[i] - contrast) * factor + contrast)); // R
+        data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - contrast) * factor + contrast)); // G
+        data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - contrast) * factor + contrast)); // B
+        
+        // Convert to grayscale for better OCR
+        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        data[i] = gray;
+        data[i + 1] = gray;
+        data[i + 2] = gray;
+      }
+      
+      // Put processed image data back
+      ctx.putImageData(imageData, 0, 0);
+      
+      // Convert canvas to blob
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], imageFile.name, { type: 'image/png' }));
+        } else {
+          resolve(imageFile); // Fallback to original
+        }
+      }, 'image/png');
+    };
+    
+    img.onerror = () => {
+      resolve(imageFile); // Fallback to original if preprocessing fails
+    };
+    
+    img.src = URL.createObjectURL(imageFile);
+  });
+};
+
 // Process document image with progress callback
 // Create a new worker for each recognition to avoid closure/serialization issues
 export const processDocument = async (imageFile, onProgress = null) => {
@@ -16,16 +71,32 @@ export const processDocument = async (imageFile, onProgress = null) => {
     if (onProgress) {
       let simulatedProgress = 0;
       progressInterval = setInterval(() => {
-        simulatedProgress = Math.min(simulatedProgress + 5, 95);
+        simulatedProgress = Math.min(simulatedProgress + 5, 90);
         onProgress(simulatedProgress / 100);
       }, 200);
     }
     
-    // Create a fresh worker for each recognition to avoid serialization issues
+    // Preprocess image for better OCR accuracy
+    if (onProgress) onProgress(0.1);
+    const processedImage = await preprocessImage(imageFile);
+    if (onProgress) onProgress(0.2);
+    
+    // Create a fresh worker with multiple languages for Indian documents
+    // eng+hin = English + Hindi (Devanagari)
     worker = await createWorker('eng+hin');
     
-    // Removed logger option to avoid DataCloneError - functions cannot be serialized to Web Workers
-    const { data } = await worker.recognize(imageFile);
+    // Set OCR parameters for better accuracy
+    // PSM 6 = Uniform block of text (good for documents like passports)
+    // PSM 11 = Sparse text (alternative for structured documents)
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6', // Uniform block of text
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ' // Common characters in Indian IDs
+    });
+    
+    // Perform OCR with optimized settings
+    const { data } = await worker.recognize(processedImage, {
+      rectangle: null // Process entire image
+    });
     
     // Set progress to 100% when done
     if (onProgress) {
@@ -266,21 +337,28 @@ const extractPassportData = (text) => {
   const data = {};
   const cleanedText = cleanText(text);
 
-  // Extract Passport Number - handle OCR errors like $, J=, etc.
+  // Extract Passport Number - handle OCR errors like $, J=, T, etc.
   const passportRegexes = [
     /Passport\s*(?:No|Number|#)?[:\s]*([A-Z0-9-]+)/i,
-    /[=:]\s*\$?\s*([A-Z0-9]{7,9})\b/,  // Handle "J = $3879331" or "= 3879331"
+    /[=:]\s*[A-Z]?\s*\$?\s*([0-9]{7,9})\b/,  // Handle "J = $3879331", "T 3879331", "= 3879331"
     /\$\s*([0-9]{7,9})\b/,  // Handle "$3879331"
-    /\b([A-Z]\d{7,9})\b/,  // Format: A12345678
-    /([A-Z]\s?\d{7,9})\b/,
-    /Passport\s+[A-Za-z]+\s+([A-Z0-9-]+)/i
+    /\b([A-Z]\d{7,9})\b/,  // Format: A12345678 (single letter + 7-9 digits)
+    /\b([A-Z]\s?\d{7,9})\b/,  // Format: "T 3879331" or "A12345678"
+    /Passport\s+[A-Za-z]+\s+([A-Z0-9-]+)/i,
+    // Look for passport number patterns in MRZ (Machine Readable Zone)
+    /P<[A-Z]{3}[A-Z0-9]+([0-9]{7,9})/i  // MRZ format: P<INDIANNAME12345678
   ];
   
   for (const regex of passportRegexes) {
     const match = cleanedText.match(regex);
     if (match) {
-      let passportNum = (match[1] || match[0]).replace(/Passport\s*/i, '').replace(/\$/g, '').trim();
-      if (passportNum.length >= 7 && passportNum.length <= 9) {
+      let passportNum = (match[1] || match[0]).replace(/Passport\s*/i, '').replace(/\$/g, '').replace(/^[A-Z]\s+/, '').trim(); // Remove leading letter+space
+      // Extract only digits if it starts with a letter
+      const digitMatch = passportNum.match(/(\d{7,9})/);
+      if (digitMatch) {
+        passportNum = digitMatch[1];
+      }
+      if (passportNum.length >= 7 && passportNum.length <= 9 && /^\d+$/.test(passportNum)) {
         data.passportNumber = passportNum;
         break;
       }
@@ -288,32 +366,66 @@ const extractPassportData = (text) => {
   }
 
   // Extract Name - handle various patterns including common Indian names
+  // Priority: Look for actual name patterns, not OCR artifacts
   const namePatterns = [
     /(?:Given\s+Name|Given\s+Name\(s\))[:\s]+([A-Z][A-Z\s]{2,})/i,
     /(?:नाम|Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /\b([A-Z][A-Z]{3,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA|VERMA|YADAV|GUPTA|MISHRA|JHA)\b/i,
-    /\b(?:SINGH|KUMAR|SHARMA|PATEL)\s+([A-Z][A-Z]{2,})\b/i,  // "SINGH ROHIT"
-    /\b([A-Z]{3,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA)\b/i,  // "ROHIT SINGH"
-    /\b([A-Z]{3,}\s+[A-Z]{3,})\b(?!\s+(?:OF|INDIA|REPUBLIC|BIRTH|DATE))/i,  // Two uppercase words, excluding false positives
-    /SINGH\s+([A-Z][A-Z]{2,})\b/i,
-    /\b([A-Z]{3,})\s+SINGH\b/i
+    // Look for common Indian surname patterns followed by first name
+    /\b(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA|VERMA|YADAV|MISHRA|JHA|SAXENA|TIWARI|JOSHI|CHAUDHARY|AGRAWAL|GUPTA|JAIN|MEHTA)\s+([A-Z][A-Z]{2,})\b/i,  // "SINGH ROHIT"
+    // Look for first name followed by common surnames
+    /\b([A-Z][A-Z]{3,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA|VERMA|YADAV|MISHRA|JHA)\b/i,  // "ROHIT SINGH"
+    // Look for full name pattern (2-3 words, all uppercase, minimum length)
+    /\b([A-Z][A-Z]{3,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)\b(?=\s|$|\d|REPUBLIC|INDIA|OF|PASSPORT)/i,  // Full name, exclude if followed by false positives
+    // Direct "SINGH ROHIT" or "ROHIT SINGH" pattern
+    /\b(SINGH\s+[A-Z][A-Z]{2,}|[A-Z][A-Z]{2,}\s+SINGH)\b/i,
+    /\b(KUMAR\s+[A-Z][A-Z]{2,}|[A-Z][A-Z]{2,}\s+KUMAR)\b/i,
+    /\b(SHARMA\s+[A-Z][A-Z]{2,}|[A-Z][A-Z]{2,}\s+SHARMA)\b/i
   ];
+  
+  // Common false positives to exclude
+  const falsePositives = /^(REPUBLIC|OF|INDIA|PASSPORT|REPUBLIC OF|DATE|BIRTH|P<IND|DEHRADUN|DUBAI|CODE|GOWNLRY|COUNTRY|COUNTRY CODE|M\s*\d+|गा|सिर|Ee|gi|SHAT|COUNTRY)$/i;
   
   for (const pattern of namePatterns) {
     const match = cleanedText.match(pattern);
     if (match) {
       let name = match[1] ? match[1].trim() : match[0].trim();
-      // Skip common false positives
+      
+      // Skip common false positives and validate name
       if (name && 
-          !name.match(/^(REPUBLIC|OF|INDIA|PASSPORT|REPUBLIC OF|DATE|BIRTH|P<IND|DEHRADUN|DUBAI|M\s*\d+|गा|सिर|Ee|gi)$/i) &&
-          name.length >= 3) {
+          !falsePositives.test(name) &&
+          name.length >= 5 &&  // Minimum length for a name
+          name.split(/\s+/).length >= 2 &&  // At least 2 words
+          !name.match(/^\d/) &&  // Doesn't start with number
+          !name.match(/[<>$]/)) {  // Doesn't contain OCR artifacts
+        
         // Try to get full name if we found surname or first name
-        const fullNameMatch = cleanedText.match(new RegExp(`\\b(${name}\\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA))\\b`, 'i'));
-        if (fullNameMatch) {
-          name = fullNameMatch[1];
+        const nameWords = name.split(/\s+/);
+        if (nameWords.length === 1 || (nameWords.length === 2 && nameWords[0].length >= 3 && nameWords[1].length >= 3)) {
+          // Check if we can find the reverse pattern
+          const reversePattern = nameWords.length === 2 ? 
+            new RegExp(`\\b(${nameWords[1]}\\s+${nameWords[0]})\\b`, 'i') :
+            new RegExp(`\\b(${nameWords[0]}\\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA))\\b`, 'i');
+          
+          const reverseMatch = cleanedText.match(reversePattern);
+          if (reverseMatch && reverseMatch[1].length > name.length) {
+            name = reverseMatch[1];
+          }
         }
+        
         data.name = name.toUpperCase();
         break;
+      }
+    }
+  }
+  
+  // Fallback: Look for "ROHIT SINGH" style patterns if nothing found
+  if (!data.name) {
+    const fallbackPattern = /\b([A-Z][A-Z]{4,}\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA|VERMA|YADAV|MISHRA|JHA))\b/i;
+    const fallbackMatch = cleanedText.match(fallbackPattern);
+    if (fallbackMatch) {
+      let name = fallbackMatch[1].trim();
+      if (!falsePositives.test(name) && name.length >= 6) {
+        data.name = name.toUpperCase();
       }
     }
   }
