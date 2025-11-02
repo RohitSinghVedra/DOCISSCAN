@@ -143,29 +143,141 @@ const extractAadhaarData = (text) => {
 // Extract Passport data
 const extractPassportData = (text) => {
   const data = {};
+
+  // Extract Passport Number - various formats: A12345678, a-1234567, Passport No: A12345678, etc.
+  const passportRegexes = [
+    /\bPassport\s*(?:No|Number|#)?[:\s]*([A-Z0-9\-]+)/i,
+    /\b[A-Z]\d{8}\b/,
+    /\b[A-Z][-\s]?\d{7,9}\b/,
+    /Passport\s+[A-Za-z]+\s+([A-Z0-9\-]+)/i
+  ];
   
-  const passportRegex = /\b[A-Z]\d{8}\b/;
-  const passportMatch = text.match(passportRegex);
-  if (passportMatch) {
-    data.passportNumber = passportMatch[0];
+  for (const regex of passportRegexes) {
+    const match = text.match(regex);
+    if (match) {
+      data.passportNumber = match[1] || match[0];
+      data.passportNumber = data.passportNumber.replace(/Passport\s*/i, '').trim();
+      break;
+    }
   }
+
+  // Extract Name - look for patterns like "Given Name(s)", "ROHIT", "Name:", etc.
+  // Priority: Given Name > Name: > standalone uppercase words (2+ words)
+  const namePatterns = [
+    /(?:Given\s+Name|Given\s+Name\(s\))[:\s]+([A-Z\s]{3,})/i,
+    /(?:नाम|Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z\s]{2,})\s+(?:SINGH|KUMAR|SHARMA|PATEL|RAO|REDDY|MEHTA|GUPTA)/i,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/,
+    /SINGH\s+([A-Z][A-Z\s]+)/i
+  ];
   
-  const nameMatch = text.match(/Name[:\s]+([A-Z\s]+)/i) || 
-                    text.match(/([A-Z]+\s+[A-Z]+)/);
-  if (nameMatch) {
-    data.name = nameMatch[1] || nameMatch[0];
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let name = match[1].trim();
+      // Skip common false positives
+      if (!name.match(/^(REPUBLIC|OF|INDIA|PASSPORT|REPUBLIC OF|DATE|BIRTH)$/i)) {
+        data.name = name;
+        break;
+      }
+    }
   }
+
+  // Extract Date of Birth - look for DD/MM/YYYY or DD-MM-YYYY patterns near Birth keywords
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Birth)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|Date\s+of\s+Birth)/i,
+    /(?:Birth|जन्म)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  ];
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
-  if (dobMatch) {
-    data.dateOfBirth = dobMatch[1];
+  for (const pattern of dobPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      // Validate date format
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
   }
+
+  // Extract Issue Date - look for dates near Issue keywords
+  const issueDatePatterns = [
+    /(?:Date\s+of\s+Issue|Issue\s+Date|जारी\s+तिथि|Issued)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Issue|जारी|Date\s+of\s+Issue)/i,
+    /(?:Issue|जारी)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  ];
   
-  const nationalityMatch = text.match(/(?:Nationality)[:\s]+([A-Z]+)/i);
-  if (nationalityMatch) {
-    data.nationality = nationalityMatch[1];
+  for (const pattern of issueDatePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.issueDate = date;
+        break;
+      }
+    }
   }
+
+  // Extract Expiry Date - look for dates near Expiry/Valid keywords
+  const expiryDatePatterns = [
+    /(?:Date\s+of\s+Expiry|Expiry\s+Date|Expires|Valid\s+until|Valid\s+upto)[:\s]*(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Expiry|Expires|Valid)/i
+  ];
   
+  for (const pattern of expiryDatePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.expiryDate = date;
+        break;
+      }
+    }
+  }
+
+  // Extract Place of Issue
+  const placePatterns = [
+    /(?:Place\s+of\s+Issue|Place\s+of\s+Birth|जारी\s+करने\s+का\s+स्थान)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:DEHRADUN|DELHI|MUMBAI|KOLKATA|CHENNAI|BANGALORE|HYDERABAD|PUNE|AHMEDABAD|JAIPUR|LUCKNOW|KANPUR|NAGPUR|INDORE|THANE|BHOPAL|VISAKHAPATNAM|PATNA|VADODARA|GHAZIABAD|LUDHIANA|AGRA|NASHIK|FARIDABAD|MEERUT|RAJKOT|VARANASI|SRINAGAR|AMRITSAR|NOIDA|RANCHI|CHANDIGARH|JABALPUR|GWALIOR|RAIPUR|KOTA|BAREILLY|MORADABAD|MYSORE|GURGAON|ALIGARH|JALANDHAR|TIRUCHIRAPALLI|BHUBANESWAR|SALEM|WARANGAL|MIRA-BHAYANDAR|THIRUVANANTHAPURAM|BIHAR|SHARIF|RAIPUR|SAHARANPUR|JODHPUR|NAGPUR|DUBAI)/i
+  ];
+  
+  for (const pattern of placePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.placeOfIssue = match[1] || match[0];
+      break;
+    }
+  }
+
+  // Extract Nationality
+  const nationalityPatterns = [
+    /(?:Nationality)[:\s]+(?:भारतीय|Indian|INDIAN|INDIA)/i,
+    /(?:भारतीय|Indian)\s*(?:/|\|)\s*(?:Nationality|राष्ट्रीयता)?/i
+  ];
+  
+  for (const pattern of nationalityPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      if (text.includes('भारतीय') || text.includes('Indian')) {
+        data.nationality = 'Indian';
+      }
+      break;
+    }
+  }
+
+  // Extract Gender/Sex
+  const genderMatch = text.match(/(?:Sex|Gender)[:\s]+([MF|Male|Female|पुरुष|महिला])/i);
+  if (genderMatch) {
+    const gender = genderMatch[1].toUpperCase();
+    if (gender.startsWith('M') || gender.includes('पुरुष')) {
+      data.gender = 'Male';
+    } else if (gender.startsWith('F') || gender.includes('महिला')) {
+      data.gender = 'Female';
+    }
+  }
+
   return data;
 };
 
