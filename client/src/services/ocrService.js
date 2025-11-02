@@ -11,7 +11,7 @@ import { createWorker } from 'tesseract.js';
 const OCR_PROVIDER = process.env.REACT_APP_OCR_PROVIDER || 'ocrspace'; // 'ocrspace', 'google', or 'tesseract'
 
 // OCR.space API (free, no API key needed for basic usage)
-const useOCRSpace = async (imageFile) => {
+const performOCRSpace = async (imageFile) => {
   try {
     const formData = new FormData();
     formData.append('file', imageFile);
@@ -44,7 +44,7 @@ const useOCRSpace = async (imageFile) => {
 };
 
 // Google Cloud Vision API (more accurate, requires API key)
-const useGoogleVision = async (imageFile) => {
+const performGoogleVision = async (imageFile) => {
   try {
     const API_KEY = process.env.REACT_APP_GOOGLE_VISION_API_KEY || process.env.REACT_APP_GOOGLE_API_KEY;
     
@@ -212,7 +212,7 @@ export const processDocument = async (imageFile, onProgress = null) => {
       try {
         if (onProgress) onProgress(0.3);
         console.log('Using OCR.space API...');
-        const result = await useOCRSpace(imageFile);
+        const result = await performOCRSpace(imageFile);
         rawText = result.text;
         confidence = result.confidence;
         if (onProgress) onProgress(1);
@@ -227,7 +227,7 @@ export const processDocument = async (imageFile, onProgress = null) => {
       try {
         if (onProgress) onProgress(0.3);
         console.log('Using Google Vision API...');
-        const result = await useGoogleVision(imageFile);
+        const result = await performGoogleVision(imageFile);
         rawText = result.text;
         confidence = result.confidence;
         if (onProgress) onProgress(1);
