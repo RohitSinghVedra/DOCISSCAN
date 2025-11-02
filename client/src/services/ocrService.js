@@ -1,9 +1,115 @@
 /**
- * OCR Service using Tesseract.js
- * Handles document processing and data extraction
+ * OCR Service - Supports multiple OCR providers
+ * 1. OCR.space API (free, no API key needed)
+ * 2. Google Cloud Vision API (free tier, more accurate)
+ * 3. Tesseract.js (fallback, client-side only)
  */
 
 import { createWorker } from 'tesseract.js';
+
+// OCR Provider configuration
+const OCR_PROVIDER = process.env.REACT_APP_OCR_PROVIDER || 'ocrspace'; // 'ocrspace', 'google', or 'tesseract'
+
+// OCR.space API (free, no API key needed for basic usage)
+const useOCRSpace = async (imageFile) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', imageFile);
+    formData.append('language', 'eng'); // English
+    formData.append('isOverlayRequired', 'false');
+    formData.append('detectOrientation', 'true');
+    formData.append('scale', 'true');
+    formData.append('OCREngine', '2'); // Engine 2 is more accurate
+
+    const response = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+    
+    if (result.OCRExitCode === 1 && result.ParsedResults && result.ParsedResults.length > 0) {
+      return {
+        text: result.ParsedResults[0].ParsedText,
+        confidence: 95, // OCR.space doesn't provide confidence, estimate high
+        raw: result
+      };
+    } else {
+      throw new Error('OCR.space API error: ' + (result.ErrorMessage || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('OCR.space API error:', error);
+    throw error;
+  }
+};
+
+// Google Cloud Vision API (more accurate, requires API key)
+const useGoogleVision = async (imageFile) => {
+  try {
+    const API_KEY = process.env.REACT_APP_GOOGLE_VISION_API_KEY || process.env.REACT_APP_GOOGLE_API_KEY;
+    
+    if (!API_KEY) {
+      throw new Error('Google Vision API key not configured');
+    }
+
+    // Convert image to base64
+    const base64Image = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(imageFile);
+    });
+
+    const response = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              image: {
+                content: base64Image
+              },
+              features: [
+                {
+                  type: 'DOCUMENT_TEXT_DETECTION', // Better for documents
+                  maxResults: 1
+                }
+              ],
+              imageContext: {
+                languageHints: ['en', 'hi'] // English and Hindi
+              }
+            }
+          ]
+        })
+      }
+    );
+
+    const result = await response.json();
+    
+    if (result.responses && result.responses[0] && result.responses[0].fullTextAnnotation) {
+      const fullText = result.responses[0].fullTextAnnotation.text;
+      return {
+        text: fullText,
+        confidence: 90, // Google Vision provides confidence in annotations
+        raw: result
+      };
+    } else if (result.error) {
+      throw new Error('Google Vision API error: ' + JSON.stringify(result.error));
+    } else {
+      throw new Error('Google Vision API: No text detected');
+    }
+  } catch (error) {
+    console.error('Google Vision API error:', error);
+    throw error;
+  }
+};
 
 // Preprocess image for better OCR accuracy
 const preprocessImage = async (imageFile) => {
@@ -90,55 +196,94 @@ const preprocessImage = async (imageFile) => {
 };
 
 // Process document image with progress callback
-// Create a new worker for each recognition to avoid closure/serialization issues
+// Uses OCR.space API (free) or Google Vision API (more accurate) or Tesseract.js (fallback)
 export const processDocument = async (imageFile, onProgress = null) => {
   let worker = null;
   let progressInterval = null;
   
   try {
-    // Simulate progress updates if callback provided (since logger causes serialization issues)
-    if (onProgress) {
-      let simulatedProgress = 0;
-      progressInterval = setInterval(() => {
-        simulatedProgress = Math.min(simulatedProgress + 5, 90);
-        onProgress(simulatedProgress / 100);
-      }, 200);
-    }
-    
-    // Preprocess image for better OCR accuracy
     if (onProgress) onProgress(0.1);
-    const processedImage = await preprocessImage(imageFile);
-    if (onProgress) onProgress(0.2);
     
-    // Create a fresh worker with multiple languages for Indian documents
-    // eng+hin = English + Hindi (Devanagari)
-    worker = await createWorker('eng+hin');
+    let rawText = '';
+    let confidence = 0;
     
-    // Set OCR parameters for better accuracy
-    // PSM 6 = Uniform block of text (good for documents like passports)
-    try {
-      await worker.setParameters({
-        tessedit_pageseg_mode: '6', // Uniform block of text
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ' // Common characters in Indian IDs
-      });
-    } catch (e) {
-      console.warn('Failed to set OCR parameters, using defaults:', e);
-      // Continue with default parameters
-    }
-    
-    // Perform OCR with optimized settings
-    // Don't pass rectangle parameter if null - process entire image
-    const { data } = await worker.recognize(processedImage);
-    
-    // Set progress to 100% when done
-    if (onProgress) {
-      if (progressInterval) {
-        clearInterval(progressInterval);
+    // Try OCR.space API first (free, no API key needed)
+    if (OCR_PROVIDER === 'ocrspace' || !OCR_PROVIDER || OCR_PROVIDER === '') {
+      try {
+        if (onProgress) onProgress(0.3);
+        console.log('Using OCR.space API...');
+        const result = await useOCRSpace(imageFile);
+        rawText = result.text;
+        confidence = result.confidence;
+        if (onProgress) onProgress(1);
+      } catch (error) {
+        console.warn('OCR.space failed, falling back to Tesseract:', error);
+        // Fall through to Tesseract
       }
-      onProgress(1);
     }
     
-    const rawText = data.text;
+    // Try Google Vision API if configured and OCR.space didn't work
+    if ((!rawText || OCR_PROVIDER === 'google') && process.env.REACT_APP_GOOGLE_VISION_API_KEY) {
+      try {
+        if (onProgress) onProgress(0.3);
+        console.log('Using Google Vision API...');
+        const result = await useGoogleVision(imageFile);
+        rawText = result.text;
+        confidence = result.confidence;
+        if (onProgress) onProgress(1);
+      } catch (error) {
+        console.warn('Google Vision failed, falling back to Tesseract:', error);
+        // Fall through to Tesseract
+      }
+    }
+    
+    // Fallback to Tesseract.js if API methods failed or not configured
+    if (!rawText || OCR_PROVIDER === 'tesseract') {
+      if (onProgress) {
+        let simulatedProgress = 20;
+        progressInterval = setInterval(() => {
+          simulatedProgress = Math.min(simulatedProgress + 5, 90);
+          onProgress(simulatedProgress / 100);
+        }, 200);
+      }
+      
+      console.log('Using Tesseract.js (fallback)...');
+      
+      // Preprocess image for better OCR accuracy
+      const processedImage = await preprocessImage(imageFile);
+      if (onProgress) onProgress(0.4);
+      
+      // Create a fresh worker with multiple languages for Indian documents
+      // eng+hin = English + Hindi (Devanagari)
+      worker = await createWorker('eng+hin');
+      
+      // Set OCR parameters for better accuracy
+      try {
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6', // Uniform block of text
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ'
+        });
+      } catch (e) {
+        console.warn('Failed to set OCR parameters, using defaults:', e);
+      }
+      
+      // Perform OCR with optimized settings
+      const { data } = await worker.recognize(processedImage);
+      rawText = data.text;
+      confidence = data.confidence;
+      
+      if (onProgress) {
+        if (progressInterval) {
+          clearInterval(progressInterval);
+        }
+        onProgress(1);
+      }
+    }
+    
+    if (!rawText) {
+      throw new Error('All OCR methods failed');
+    }
+    
     const documentType = identifyDocumentType(rawText);
     const extractedData = extractDocumentData(rawText, documentType);
     
@@ -146,7 +291,7 @@ export const processDocument = async (imageFile, onProgress = null) => {
       documentType,
       rawText,
       extractedData,
-      confidence: data.confidence
+      confidence
     };
   } catch (error) {
     console.error('OCR Error:', error);
