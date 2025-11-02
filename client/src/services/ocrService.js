@@ -8,7 +8,7 @@
 import { createWorker } from 'tesseract.js';
 
 // OCR Provider configuration
-const OCR_PROVIDER = process.env.REACT_APP_OCR_PROVIDER || 'ocrspace'; // 'ocrspace', 'google', or 'tesseract'
+const OCR_PROVIDER = process.env.REACT_APP_OCR_PROVIDER || 'ocrspace'; // 'ocrspace', 'openai', 'google', or 'tesseract'
 
 // OCR.space API (free, no API key needed for basic usage)
 const performOCRSpace = async (imageFile) => {
@@ -107,6 +107,80 @@ const performGoogleVision = async (imageFile) => {
     }
   } catch (error) {
     console.error('Google Vision API error:', error);
+    throw error;
+  }
+};
+
+// OpenAI GPT-4 Vision API (requires OpenAI API key, more accurate than OCR.space)
+const performOpenAIVision = async (imageFile) => {
+  try {
+    const API_KEY = process.env.REACT_APP_OPENAI_API_KEY;
+    
+    if (!API_KEY) {
+      throw new Error('OpenAI API key not configured');
+    }
+
+    // Convert image to base64
+    const base64Image = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(imageFile);
+    });
+
+    // Determine MIME type
+    const mimeType = imageFile.type || 'image/jpeg';
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o', // GPT-4 Vision model
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Extract all text from this image. This is an Indian ID document (Aadhaar, Passport, PAN, Driving License, or Voter ID). Return ONLY the raw text exactly as it appears, including both English and Hindi/Devanagari text. Do not format or structure it, just extract all visible text.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 2000
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.error) {
+      throw new Error('OpenAI API error: ' + JSON.stringify(result.error));
+    }
+    
+    if (result.choices && result.choices[0] && result.choices[0].message) {
+      const text = result.choices[0].message.content.trim();
+      return {
+        text: text,
+        confidence: 92, // GPT-4 Vision is very accurate
+        raw: result
+      };
+    } else {
+      throw new Error('OpenAI API: No text extracted');
+    }
+  } catch (error) {
+    console.error('OpenAI Vision API error:', error);
     throw error;
   }
 };
@@ -217,12 +291,27 @@ export const processDocument = async (imageFile, onProgress = null) => {
         confidence = result.confidence;
         if (onProgress) onProgress(1);
       } catch (error) {
-        console.warn('OCR.space failed, falling back to Tesseract:', error);
-        // Fall through to Tesseract
+        console.warn('OCR.space failed, trying next option:', error);
+        // Continue to next provider
       }
     }
     
-    // Try Google Vision API if configured and OCR.space didn't work
+    // Try OpenAI GPT-4 Vision if configured
+    if ((!rawText || OCR_PROVIDER === 'openai') && process.env.REACT_APP_OPENAI_API_KEY) {
+      try {
+        if (onProgress) onProgress(0.3);
+        console.log('Using OpenAI GPT-4 Vision API...');
+        const result = await performOpenAIVision(imageFile);
+        rawText = result.text;
+        confidence = result.confidence;
+        if (onProgress) onProgress(1);
+      } catch (error) {
+        console.warn('OpenAI Vision failed, trying next option:', error);
+        // Continue to next provider
+      }
+    }
+    
+    // Try Google Vision API if configured (requires billing)
     if ((!rawText || OCR_PROVIDER === 'google') && process.env.REACT_APP_GOOGLE_VISION_API_KEY) {
       try {
         if (onProgress) onProgress(0.3);
@@ -232,8 +321,8 @@ export const processDocument = async (imageFile, onProgress = null) => {
         confidence = result.confidence;
         if (onProgress) onProgress(1);
       } catch (error) {
-        console.warn('Google Vision failed, falling back to Tesseract:', error);
-        // Fall through to Tesseract
+        console.warn('Google Vision failed, trying next option:', error);
+        // Continue to next provider
       }
     }
     
