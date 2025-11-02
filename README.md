@@ -1,5 +1,7 @@
 # IDDocScan - Indian Document Scanner
 
+> **Note:** Requires OCR.space API key for optimal accuracy. Add `REACT_APP_OCR_SPACE_API_KEY` to Netlify environment variables.
+
 A mobile-focused web application for scanning and extracting information from Indian ID documents including Aadhaar, Passport, PAN, Driving License, and more.
 
 ## Features
