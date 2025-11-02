@@ -6,7 +6,7 @@
 
 import { createWorker } from 'tesseract.js';
 
-// OCR.space API (free, no API key needed for basic usage)
+// OCR.space API (free tier available, API key optional but recommended)
 const performOCRSpace = async (imageFile) => {
   try {
     const formData = new FormData();
@@ -16,11 +16,28 @@ const performOCRSpace = async (imageFile) => {
     formData.append('detectOrientation', 'true');
     formData.append('scale', 'true');
     formData.append('OCREngine', '2'); // Engine 2 is more accurate
+    
+    // Optional API key - if provided, use it (prevents 403 errors)
+    const API_KEY = process.env.REACT_APP_OCR_SPACE_API_KEY;
+    if (API_KEY) {
+      formData.append('apikey', API_KEY);
+    }
 
     const response = await fetch('https://api.ocr.space/parse/image', {
       method: 'POST',
+      headers: API_KEY ? {} : {
+        // Some browsers may need this
+      },
       body: formData
     });
+
+    // Check response status
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error('OCR.space API: Access forbidden. May need API key or hit rate limit. Get free key at https://ocr.space/ocrapi');
+      }
+      throw new Error(`OCR.space API: HTTP ${response.status} ${response.statusText}`);
+    }
 
     const result = await response.json();
     
@@ -31,7 +48,7 @@ const performOCRSpace = async (imageFile) => {
         raw: result
       };
     } else {
-      throw new Error('OCR.space API error: ' + (result.ErrorMessage || 'Unknown error'));
+      throw new Error('OCR.space API error: ' + (result.ErrorMessage || result.ErrorMessage[0]?.ErrorMessageText || 'Unknown error'));
     }
   } catch (error) {
     console.error('OCR.space API error:', error);
@@ -169,14 +186,24 @@ export const processDocument = async (imageFile, onProgress = null) => {
       // eng+hin = English + Hindi (Devanagari)
       worker = await createWorker('eng+hin');
       
-      // Set OCR parameters for better accuracy
+      // Set OCR parameters for better accuracy on documents
       try {
+        // Try PSM 11 first (Sparse text - good for structured documents)
         await worker.setParameters({
-          tessedit_pageseg_mode: '6', // Uniform block of text
+          tessedit_pageseg_mode: '11', // Sparse text - better for structured documents like passports
           tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ'
         });
       } catch (e) {
-        console.warn('Failed to set OCR parameters, using defaults:', e);
+        console.warn('Failed to set OCR parameters, trying PSM 6:', e);
+        try {
+          // Fallback to PSM 6 (Uniform block of text)
+          await worker.setParameters({
+            tessedit_pageseg_mode: '6',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ'
+          });
+        } catch (e2) {
+          console.warn('Failed to set OCR parameters, using defaults:', e2);
+        }
       }
       
       // Perform OCR with optimized settings
