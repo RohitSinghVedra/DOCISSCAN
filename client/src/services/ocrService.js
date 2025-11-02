@@ -254,7 +254,7 @@ const extractPassportData = (text) => {
   // Extract Nationality
   const nationalityPatterns = [
     /(?:Nationality)[:\s]+(?:भारतीय|Indian|INDIAN|INDIA)/i,
-    /(?:भारतीय|Indian)\s*(?:/|\|)\s*(?:Nationality|राष्ट्रीयता)?/i
+    /(?:भारतीय|Indian)\s*(?:\/|\|)\s*(?:Nationality|राष्ट्रीयता)?/i
   ];
   
   for (const pattern of nationalityPatterns) {
