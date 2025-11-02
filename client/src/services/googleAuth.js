@@ -150,7 +150,7 @@ const setupSpreadsheetHeaders = async (spreadsheetId) => {
   try {
     await gapi.client.sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: 'Documents!A1:Q1',
+      range: 'Documents!A1:R1',
       valueInputOption: 'RAW',
       resource: {
         values: [[
@@ -165,6 +165,7 @@ const setupSpreadsheetHeaders = async (spreadsheetId) => {
           'Nationality',
           'Issue Date',
           'Expiry Date',
+          'Place of Issue',
           'District',
           'State',
           'Pincode',
@@ -195,6 +196,7 @@ export const appendToSpreadsheet = async (spreadsheetId, data) => {
       extractedData.nationality || '',
       extractedData.issueDate || '',
       extractedData.expiryDate || '',
+      extractedData.placeOfIssue || '',
       extractedData.district || '',
       extractedData.state || '',
       extractedData.pincode || '',
