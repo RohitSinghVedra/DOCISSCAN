@@ -9,25 +9,31 @@ import { createWorker } from 'tesseract.js';
 // Create a new worker for each recognition to avoid closure/serialization issues
 export const processDocument = async (imageFile, onProgress = null) => {
   let worker = null;
+  let progressInterval = null;
   
   try {
+    // Simulate progress updates if callback provided (since logger causes serialization issues)
+    if (onProgress) {
+      let simulatedProgress = 0;
+      progressInterval = setInterval(() => {
+        simulatedProgress = Math.min(simulatedProgress + 5, 95);
+        onProgress(simulatedProgress / 100);
+      }, 200);
+    }
+    
     // Create a fresh worker for each recognition to avoid serialization issues
     worker = await createWorker('eng+hin');
     
-    // Use a minimal logger that only passes primitive values
-    const { data } = await worker.recognize(imageFile, {
-      logger: onProgress ? (m) => {
-        // Only handle recognizing text status and ensure progress is a number
-        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-          try {
-            onProgress(m.progress);
-          } catch (err) {
-            // Silently ignore errors in progress callback
-            console.warn('Progress callback error:', err);
-          }
-        }
-      } : undefined
-    });
+    // Removed logger option to avoid DataCloneError - functions cannot be serialized to Web Workers
+    const { data } = await worker.recognize(imageFile);
+    
+    // Set progress to 100% when done
+    if (onProgress) {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+      onProgress(1);
+    }
     
     const rawText = data.text;
     const documentType = identifyDocumentType(rawText);
@@ -44,6 +50,11 @@ export const processDocument = async (imageFile, onProgress = null) => {
     const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
     throw new Error('Failed to process document: ' + errorMessage);
   } finally {
+    // Clear progress interval if it exists
+    if (progressInterval) {
+      clearInterval(progressInterval);
+    }
+    
     // Clean up worker after each recognition
     if (worker) {
       await worker.terminate();
