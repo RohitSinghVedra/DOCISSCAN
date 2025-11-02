@@ -105,36 +105,114 @@ const extractDocumentData = (text, documentType) => {
 const extractAadhaarData = (text) => {
   const data = {};
   
-  // Extract Aadhaar number (12 digits)
-  const aadhaarRegex = /\b\d{4}\s?\d{4}\s?\d{4}\b/;
-  const aadhaarMatch = text.match(aadhaarRegex);
-  if (aadhaarMatch) {
-    data.aadhaarNumber = aadhaarMatch[0];
+  // Extract Aadhaar number (12 digits in various formats)
+  const aadhaarPatterns = [
+    /\b\d{4}\s\d{4}\s\d{4}\b/,  // Space separated
+    /\b\d{12}\b/,  // No spaces
+    /(?:Aadhaar|आधार)[:\s]*(\d{4}\s?\d{4}\s?\d{4})/i,
+    /\b(\d{4}[-]\d{4}[-]\d{4})\b/  // Hyphen separated
+  ];
+  
+  for (const pattern of aadhaarPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.aadhaarNumber = (match[1] || match[0]).replace(/\s/g, ' ');
+      break;
+    }
   }
   
-  // Extract name
-  const nameMatch = text.match(/Name[:\s]+([A-Z\s]+)/i) || 
-                    text.match(/([A-Z]+\s+[A-Z]+)/);
-  if (nameMatch) {
-    data.name = nameMatch[1] || nameMatch[0];
+  // Extract Name - multiple patterns for Hindi/English
+  const namePatterns = [
+    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:गया नाम|Given Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,  // Three word names
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/  // Two word names
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let name = (match[1] || match[0]).trim();
+      // Skip false positives
+      if (!name.match(/^(REPUBLIC|OF|INDIA|AADHAAR|आधार|GOVERNMENT|GOVT)$/i)) {
+        data.name = name;
+        break;
+      }
+    }
   }
   
-  // Extract DOB
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
-  if (dobMatch) {
-    data.dateOfBirth = dobMatch[1];
+  // Extract Date of Birth - multiple patterns
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Year\s+of\s+Birth)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:DOB)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|DOB)/i,
+    /(?:Birth|जन्म)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  ];
+  
+  for (const pattern of dobPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
   }
   
-  // Extract Gender
-  const genderMatch = text.match(/(?:Gender|Male|Female)[:\s]+(\w+)/i);
-  if (genderMatch) {
-    data.gender = genderMatch[1];
+  // Extract Gender - multiple patterns including Hindi
+  const genderPatterns = [
+    /(?:Gender|Sex)[:\s]+([MF]|Male|Female|पुरुष|महिला)/i,
+    /(?:Male|Female|पुरुष|महिला)[:\s]*([MF])/i,
+    /\b([MF])\b(?:\s|.*?)(?:Gender|Sex)/i
+  ];
+  
+  for (const pattern of genderPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const gender = (match[1] || match[0]).toUpperCase();
+      if (gender === 'M' || gender === 'MALE' || gender.includes('पुरुष')) {
+        data.gender = 'Male';
+      } else if (gender === 'F' || gender === 'FEMALE' || gender.includes('महिला')) {
+        data.gender = 'Female';
+      }
+      if (data.gender) break;
+    }
   }
   
-  // Extract Address
-  const addressMatch = text.match(/(?:Address)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i);
-  if (addressMatch) {
-    data.address = addressMatch[1];
+  // Extract Address - comprehensive pattern for multi-line addresses
+  const addressPatterns = [
+    /(?:Address|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,4})/i,
+    /(?:पता)[:\s]+([^\n]+(?:\n[^\n]+){0,4})/i,
+    /Address[:\s]+(.+?)(?:\n\s*\n|Aadhaar|आधार|Male|Female|Gender|जन्म)/i
+  ];
+  
+  for (const pattern of addressPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let address = match[1].trim();
+      // Clean up address (remove extra whitespace)
+      address = address.replace(/\s+/g, ' ').replace(/\n\s*\n/g, ', ');
+      if (address.length > 10) {  // Minimum address length
+        data.address = address;
+        break;
+      }
+    }
+  }
+  
+  // Extract Pincode (6 digits)
+  const pincodeMatch = text.match(/\b\d{6}\b/);
+  if (pincodeMatch) {
+    data.pincode = pincodeMatch[0];
+  }
+  
+  // Extract State/District from address context
+  const states = ['DELHI', 'MUMBAI', 'BANGALORE', 'CHENNAI', 'KOLKATA', 'HYDERABAD', 'PUNE', 'AHMEDABAD', 'JAIPUR', 'LUCKNOW', 'KANPUR', 'NAGPUR'];
+  for (const state of states) {
+    if (text.toUpperCase().includes(state)) {
+      data.state = state;
+      break;
+    }
   }
   
   return data;
@@ -284,87 +362,306 @@ const extractPassportData = (text) => {
 // Extract PAN card data
 const extractPANData = (text) => {
   const data = {};
+
+  // Extract PAN Number - format: ABCDE1234F
+  const panPatterns = [
+    /\b[A-Z]{5}\d{4}[A-Z]\b/,
+    /(?:PAN|Permanent\s+Account\s+Number|पैन)[:\s]*([A-Z]{5}\d{4}[A-Z])/i,
+    /([A-Z]{5}\d{4}[A-Z])\b/
+  ];
   
-  const panRegex = /\b[A-Z]{5}\d{4}[A-Z]\b/;
-  const panMatch = text.match(panRegex);
-  if (panMatch) {
-    data.panNumber = panMatch[0];
+  for (const pattern of panPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.panNumber = match[1] || match[0];
+      break;
+    }
   }
+
+  // Extract Name
+  const namePatterns = [
+    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Income\s+Tax\s+Department)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/
+  ];
   
-  const nameMatch = text.match(/Name[:\s]+([A-Z\s]+)/i) || 
-                    text.match(/([A-Z]+\s+[A-Z]+)/);
-  if (nameMatch) {
-    data.name = nameMatch[1] || nameMatch[0];
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let name = (match[1] || match[0]).trim();
+      if (!name.match(/^(INCOME|TAX|DEPARTMENT|PAN|GOVERNMENT|GOVT)$/i)) {
+        data.name = name;
+        break;
+      }
+    }
   }
+
+  // Extract Father's Name
+  const fatherNamePatterns = [
+    /(?:Father'?s?\s+Name|पिता\s+का\s+नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Father)[:\s]+([A-Z][A-Z\s]{2,})/i
+  ];
   
-  const fatherNameMatch = text.match(/(?:Father's Name)[:\s]+([A-Z\s]+)/i);
-  if (fatherNameMatch) {
-    data.fatherName = fatherNameMatch[1];
+  for (const pattern of fatherNamePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.fatherName = (match[1] || match[0]).trim();
+      break;
+    }
   }
+
+  // Extract Date of Birth
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:Birth)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|DOB)/i
+  ];
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
-  if (dobMatch) {
-    data.dateOfBirth = dobMatch[1];
+  for (const pattern of dobPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
   }
-  
+
   return data;
 };
 
 // Extract Driving License data
 const extractDrivingLicenseData = (text) => {
   const data = {};
+
+  // Extract License Number - various formats
+  const licensePatterns = [
+    /\b[A-Z]{2}\d{2}\d{4}\d{7}\b/,  // Standard format: XXYYNNNNNNNNNNN
+    /\b[A-Z]{2}\s?\d{2}\s?\d{4}\s?\d{7}\b/,  // With spaces
+    /(?:License\s+No|DL\s+No|Driving\s+License)[:\s]*([A-Z]{2}[\s-]?\d{13})/i,
+    /(?:DL\s+No)[:\s]*([A-Z]{2}\d{2}\d{4}\d{7})/i
+  ];
   
-  const licenseRegex = /\b[A-Z]{2}\d{2}\d{4}\d{7}\b/;
-  const licenseMatch = text.match(licenseRegex);
-  if (licenseMatch) {
-    data.idNumber = licenseMatch[0];
+  for (const pattern of licensePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.idNumber = (match[1] || match[0]).replace(/\s/g, '');
+      break;
+    }
   }
+
+  // Extract Name
+  const namePatterns = [
+    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Licensee'?s?\s+Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/
+  ];
   
-  const nameMatch = text.match(/Name[:\s]+([A-Z\s]+)/i) || 
-                    text.match(/([A-Z]+\s+[A-Z]+)/);
-  if (nameMatch) {
-    data.name = nameMatch[1] || nameMatch[0];
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let name = (match[1] || match[0]).trim();
+      if (!name.match(/^(DRIVING|LICENSE|MOTOR|VEHICLES|TRANSPORT)$/i)) {
+        data.name = name;
+        break;
+      }
+    }
   }
+
+  // Extract Date of Birth
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:Birth)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|DOB)/i
+  ];
   
-  const dobMatch = text.match(/(?:DOB|Date of Birth)[:\s]+(\d{2}[-/]\d{2}[-/]\d{4})/i);
-  if (dobMatch) {
-    data.dateOfBirth = dobMatch[1];
+  for (const pattern of dobPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
   }
+
+  // Extract Issue Date
+  const issueDatePatterns = [
+    /(?:Date\s+of\s+Issue|Issued|Issue\s+Date)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:Issue)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  ];
   
-  const addressMatch = text.match(/(?:Address)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i);
-  if (addressMatch) {
-    data.address = addressMatch[1];
+  for (const pattern of issueDatePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.issueDate = date;
+        break;
+      }
+    }
   }
+
+  // Extract Expiry Date
+  const expiryDatePatterns = [
+    /(?:Valid\s+Till|Valid\s+Until|Expiry\s+Date)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:Valid)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+  ];
   
+  for (const pattern of expiryDatePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.expiryDate = date;
+        break;
+      }
+    }
+  }
+
+  // Extract Address
+  const addressPatterns = [
+    /(?:Address|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i,
+    /(?:Residence|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i
+  ];
+  
+  for (const pattern of addressPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let address = match[1].trim();
+      address = address.replace(/\s+/g, ' ').replace(/\n\s*\n/g, ', ');
+      if (address.length > 10) {
+        data.address = address;
+        break;
+      }
+    }
+  }
+
+  // Extract Pincode
+  const pincodeMatch = text.match(/\b\d{6}\b/);
+  if (pincodeMatch) {
+    data.pincode = pincodeMatch[0];
+  }
+
   return data;
 };
 
 // Extract Voter ID data
 const extractVoterIDData = (text) => {
   const data = {};
+
+  // Extract Voter ID Number - format: XXX1234567
+  const voterIdPatterns = [
+    /\b[A-Z]{3}\d{7}\b/,
+    /(?:Voter\s+ID|EPIC\s+No|Electors\s+Photo\s+Identity\s+Card)[:\s]*([A-Z]{3}\d{7})/i,
+    /(?:EPIC)[:\s]*([A-Z]{3}\d{7})/i
+  ];
   
-  const voterIdRegex = /\b[A-Z]{3}\d{7}\b/;
-  const voterIdMatch = text.match(voterIdRegex);
-  if (voterIdMatch) {
-    data.idNumber = voterIdMatch[0];
+  for (const pattern of voterIdPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.idNumber = match[1] || match[0];
+      break;
+    }
   }
+
+  // Extract Name
+  const namePatterns = [
+    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Elector'?s?\s+Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,
+    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/
+  ];
   
-  const nameMatch = text.match(/Name[:\s]+([A-Z\s]+)/i) || 
-                    text.match(/([A-Z]+\s+[A-Z]+)/);
-  if (nameMatch) {
-    data.name = nameMatch[1] || nameMatch[0];
+  for (const pattern of namePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let name = (match[1] || match[0]).trim();
+      if (!name.match(/^(ELECTION|COMMISSION|VOTER|EPIC|GOVERNMENT)$/i)) {
+        data.name = name;
+        break;
+      }
+    }
   }
+
+  // Extract Father's/Husband's Name
+  const fatherNamePatterns = [
+    /(?:Father'?s?\s+Name|पिता\s+का\s+नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Husband'?s?\s+Name|पति\s+का\s+नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
+    /(?:Father|Husband)[:\s]+([A-Z][A-Z\s]{2,})/i
+  ];
   
-  const fatherNameMatch = text.match(/(?:Father's|Husband's) Name[:\s]+([A-Z\s]+)/i);
-  if (fatherNameMatch) {
-    data.fatherName = fatherNameMatch[1];
+  for (const pattern of fatherNamePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.fatherName = (match[1] || match[0]).trim();
+      break;
+    }
   }
+
+  // Extract Date of Birth
+  const dobPatterns = [
+    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Age)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
+    /(?:Birth)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|DOB|Age)/i
+  ];
   
-  const addressMatch = text.match(/(?:Address)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i);
-  if (addressMatch) {
-    data.address = addressMatch[1];
+  for (const pattern of dobPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const date = match[1] || match[0];
+      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+        data.dateOfBirth = date;
+        break;
+      }
+    }
   }
+
+  // Extract Address
+  const addressPatterns = [
+    /(?:Address|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,4})/i,
+    /(?:Electoral\s+Roll|Address)[:\s]+([^\n]+(?:\n[^\n]+){0,3})/i
+  ];
   
+  for (const pattern of addressPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let address = match[1].trim();
+      address = address.replace(/\s+/g, ' ').replace(/\n\s*\n/g, ', ');
+      if (address.length > 10) {
+        data.address = address;
+        break;
+      }
+    }
+  }
+
+  // Extract Gender
+  const genderMatch = text.match(/(?:Sex|Gender)[:\s]+([MF]|Male|Female|पुरुष|महिला)/i);
+  if (genderMatch) {
+    const gender = genderMatch[1].toUpperCase();
+    if (gender === 'M' || gender === 'MALE' || gender.includes('पुरुष')) {
+      data.gender = 'Male';
+    } else if (gender === 'F' || gender === 'FEMALE' || gender.includes('महिला')) {
+      data.gender = 'Female';
+    }
+  }
+
+  // Extract Assembly/Constituency
+  const assemblyMatch = text.match(/(?:Assembly|Constituency)[:\s]+([A-Z][A-Z\s]{2,})/i);
+  if (assemblyMatch) {
+    data.otherInfo1 = (assemblyMatch[1] || assemblyMatch[0]).trim();
+  }
+
+  // Extract Pincode
+  const pincodeMatch = text.match(/\b\d{6}\b/);
+  if (pincodeMatch) {
+    data.pincode = pincodeMatch[0];
+  }
+
   return data;
 };
 
