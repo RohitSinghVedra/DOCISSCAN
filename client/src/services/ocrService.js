@@ -7,56 +7,85 @@ import { createWorker } from 'tesseract.js';
 
 // Preprocess image for better OCR accuracy
 const preprocessImage = async (imageFile) => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       
-      // Draw image
-      ctx.drawImage(img, 0, 0);
-      
-      // Get image data for processing
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      
-      // Apply image enhancement
-      for (let i = 0; i < data.length; i += 4) {
-        // Increase contrast
-        const factor = 1.5;
-        const contrast = 128;
-        data[i] = Math.min(255, Math.max(0, (data[i] - contrast) * factor + contrast)); // R
-        data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - contrast) * factor + contrast)); // G
-        data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - contrast) * factor + contrast)); // B
-        
-        // Convert to grayscale for better OCR
-        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        data[i] = gray;
-        data[i + 1] = gray;
-        data[i + 2] = gray;
+      if (!ctx) {
+        // Canvas not supported, return original
+        resolve(imageFile);
+        return;
       }
       
-      // Put processed image data back
-      ctx.putImageData(imageData, 0, 0);
-      
-      // Convert canvas to blob
-      canvas.toBlob((blob) => {
-        if (blob) {
-          resolve(new File([blob], imageFile.name, { type: 'image/png' }));
-        } else {
-          resolve(imageFile); // Fallback to original
+      img.onload = () => {
+        try {
+          if (!img.width || !img.height) {
+            resolve(imageFile);
+            return;
+          }
+          
+          canvas.width = img.width;
+          canvas.height = img.height;
+          
+          // Draw image
+          ctx.drawImage(img, 0, 0);
+          
+          // Get image data for processing
+          let imageData;
+          try {
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          } catch (e) {
+            // CORS or other error, return original
+            resolve(imageFile);
+            return;
+          }
+          
+          const data = imageData.data;
+          
+          // Apply image enhancement
+          for (let i = 0; i < data.length; i += 4) {
+            // Increase contrast
+            const factor = 1.5;
+            const contrast = 128;
+            data[i] = Math.min(255, Math.max(0, (data[i] - contrast) * factor + contrast)); // R
+            data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - contrast) * factor + contrast)); // G
+            data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - contrast) * factor + contrast)); // B
+            
+            // Convert to grayscale for better OCR
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = gray;
+            data[i + 1] = gray;
+            data[i + 2] = gray;
+          }
+          
+          // Put processed image data back
+          ctx.putImageData(imageData, 0, 0);
+          
+          // Convert canvas to blob
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(new File([blob], imageFile.name, { type: 'image/png' }));
+            } else {
+              resolve(imageFile); // Fallback to original
+            }
+          }, 'image/png');
+        } catch (e) {
+          console.warn('Image preprocessing error:', e);
+          resolve(imageFile); // Fallback to original on error
         }
-      }, 'image/png');
-    };
-    
-    img.onerror = () => {
-      resolve(imageFile); // Fallback to original if preprocessing fails
-    };
-    
-    img.src = URL.createObjectURL(imageFile);
+      };
+      
+      img.onerror = () => {
+        resolve(imageFile); // Fallback to original if preprocessing fails
+      };
+      
+      img.src = URL.createObjectURL(imageFile);
+    } catch (e) {
+      console.warn('Preprocessing setup error:', e);
+      resolve(imageFile); // Fallback to original on any error
+    }
   });
 };
 
@@ -87,16 +116,19 @@ export const processDocument = async (imageFile, onProgress = null) => {
     
     // Set OCR parameters for better accuracy
     // PSM 6 = Uniform block of text (good for documents like passports)
-    // PSM 11 = Sparse text (alternative for structured documents)
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6', // Uniform block of text
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ' // Common characters in Indian IDs
-    });
+    try {
+      await worker.setParameters({
+        tessedit_pageseg_mode: '6', // Uniform block of text
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:,-.()आअइईउऊएऐओऔकखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळक्षज्ञ' // Common characters in Indian IDs
+      });
+    } catch (e) {
+      console.warn('Failed to set OCR parameters, using defaults:', e);
+      // Continue with default parameters
+    }
     
     // Perform OCR with optimized settings
-    const { data } = await worker.recognize(processedImage, {
-      rectangle: null // Process entire image
-    });
+    // Don't pass rectangle parameter if null - process entire image
+    const { data } = await worker.recognize(processedImage);
     
     // Set progress to 100% when done
     if (onProgress) {
