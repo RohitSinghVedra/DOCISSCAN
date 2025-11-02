@@ -3,43 +3,30 @@
  * Handles document processing and data extraction
  */
 
-import Tesseract from 'tesseract.js';
-
-// Initialize Tesseract worker
-let worker = null;
-
-// Global variable to hold the current onProgress callback
-// This avoids closure capture issues when passing logger to Web Worker
-let currentOnProgressCallback = null;
-
-// A non-capturing logger function for Tesseract.js
-// This function doesn't capture any variables from its closure
-const tesseractLogger = m => {
-  // Reference the global variable instead of capturing it
-  if (currentOnProgressCallback && m.status === 'recognizing text') {
-    currentOnProgressCallback(m.progress);
-  }
-};
-
-const getWorker = async () => {
-  if (!worker) {
-    worker = await Tesseract.createWorker('eng+hin', 1, {
-      logger: tesseractLogger
-    });
-  }
-  return worker;
-};
+import { createWorker } from 'tesseract.js';
 
 // Process document image with progress callback
+// Create a new worker for each recognition to avoid closure/serialization issues
 export const processDocument = async (imageFile, onProgress = null) => {
-  // Set the global callback for this recognition process
-  currentOnProgressCallback = onProgress;
+  let worker = null;
   
   try {
-    const worker = await getWorker();
+    // Create a fresh worker for each recognition to avoid serialization issues
+    worker = await createWorker('eng+hin');
     
+    // Use a minimal logger that only passes primitive values
     const { data } = await worker.recognize(imageFile, {
-      logger: tesseractLogger
+      logger: onProgress ? (m) => {
+        // Only handle recognizing text status and ensure progress is a number
+        if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+          try {
+            onProgress(m.progress);
+          } catch (err) {
+            // Silently ignore errors in progress callback
+            console.warn('Progress callback error:', err);
+          }
+        }
+      } : undefined
     });
     
     const rawText = data.text;
@@ -57,8 +44,10 @@ export const processDocument = async (imageFile, onProgress = null) => {
     const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
     throw new Error('Failed to process document: ' + errorMessage);
   } finally {
-    // Clear the global callback after recognition is complete or on error
-    currentOnProgressCallback = null;
+    // Clean up worker after each recognition
+    if (worker) {
+      await worker.terminate();
+    }
   }
 };
 
@@ -256,12 +245,10 @@ const extractVoterIDData = (text) => {
   return data;
 };
 
-// Cleanup worker
+// Cleanup (no longer needed since we create workers per recognition)
 export const cleanup = async () => {
-  if (worker) {
-    await worker.terminate();
-    worker = null;
-  }
+  // Workers are cleaned up after each recognition
+  // This function is kept for API compatibility
 };
 
 const ocrService = {
