@@ -46,20 +46,23 @@ const CameraScan = ({ user }) => {
 
   // Update video when stream changes
   useEffect(() => {
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.onloadedmetadata = () => {
-        videoRef.current.play().catch(err => {
+    const videoElement = videoRef.current;
+    
+    if (stream && videoElement) {
+      videoElement.srcObject = stream;
+      videoElement.onloadedmetadata = () => {
+        videoElement.play().catch(err => {
           console.error('Video play error:', err);
         });
       };
-      videoRef.current.play().catch(err => {
+      videoElement.play().catch(err => {
         console.error('Video play error:', err);
       });
     }
+    
     return () => {
-      if (videoRef.current && !stream) {
-        videoRef.current.srcObject = null;
+      if (videoElement && !stream) {
+        videoElement.srcObject = null;
       }
     };
   }, [stream]);
