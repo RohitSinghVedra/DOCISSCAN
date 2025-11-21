@@ -15,7 +15,6 @@ import {
   where,
   serverTimestamp 
 } from 'firebase/firestore';
-import { createSpreadsheet } from './googleAuth';
 
 /**
  * Create a new nightclub
@@ -279,7 +278,7 @@ const verifyPassword = async (password, hash) => {
   return passwordHash === hash;
 };
 
-export default {
+const adminService = {
   createClub,
   getClubByUsername,
   getClubById,
@@ -289,4 +288,6 @@ export default {
   authenticateClub,
   initializeClubSpreadsheet
 };
+
+export default adminService;
 
