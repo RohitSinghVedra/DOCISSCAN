@@ -346,14 +346,26 @@ const AdminDashboard = ({ user, onLogout }) => {
                 <small style={{color: '#666'}}>Password for the Gmail account (stored securely, given to club owner)</small>
               </div>
 
-              <div style={{marginTop: '24px', padding: '16px', background: '#f5f5f5', borderRadius: '8px'}}>
-                <h4 style={{marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600}}>Google OAuth Tokens (For Google Sheets Access)</h4>
-                <p style={{fontSize: '12px', color: '#666', marginBottom: '16px'}}>
-                  To enable automatic Google Sheets access, you need to generate OAuth tokens. 
+              <div style={{marginTop: '24px', padding: '16px', background: '#fff3cd', borderRadius: '8px', border: '1px solid #ffc107'}}>
+                <h4 style={{marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: '#856404'}}>⚠️ Google OAuth Tokens (Required for Google Sheets Access)</h4>
+                <p style={{fontSize: '12px', color: '#856404', marginBottom: '16px'}}>
+                  <strong>Recommended Method:</strong> Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" style={{color: '#667eea', fontWeight: 600}}>Google OAuth Playground</a> to generate tokens.
                   <br />
-                  <strong>Option 1:</strong> Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" style={{color: '#667eea'}}>Google OAuth Playground</a> to generate tokens.
                   <br />
-                  <strong>Option 2:</strong> Leave blank and generate tokens later using the "Generate Tokens" button in the table.
+                  <strong>Steps:</strong>
+                  <br />
+                  1. Go to OAuth Playground → Settings → Use your own OAuth credentials
+                  <br />
+                  2. Select scope: <code>https://www.googleapis.com/auth/spreadsheets</code>
+                  <br />
+                  3. Authorize with the nightclub's Gmail account
+                  <br />
+                  4. Exchange code for tokens
+                  <br />
+                  5. Paste tokens below
+                  <br />
+                  <br />
+                  <strong>Note:</strong> The "Generate Tokens" button requires adding Gmail accounts as test users in Google Cloud Console.
                 </p>
 
                 <div className="form-group">
