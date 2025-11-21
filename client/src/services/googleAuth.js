@@ -8,6 +8,7 @@ import { gapi } from 'gapi-script';
 
 let accessToken = null;
 let gapiInitialized = false;
+let clubAccessToken = null; // For club accounts using pre-configured Gmail
 
 // Initialize Google API Client for Sheets API (no auth2)
 export const initGoogleAPI = () => {
@@ -85,9 +86,27 @@ export const signOutGoogle = async () => {
   }
 };
 
+// Use club's pre-configured Gmail access token
+export const useClubToken = async (token) => {
+  try {
+    clubAccessToken = token;
+    
+    // Initialize Google API if not already done
+    await initGoogleAPI();
+    
+    // Set the club's token
+    gapi.client.setToken({ access_token: clubAccessToken });
+    
+    return true;
+  } catch (error) {
+    console.error('Error setting club token:', error);
+    throw error;
+  }
+};
+
 // Check if user is signed in
 export const isSignedIn = () => {
-  return accessToken !== null && gapi.client.getToken() !== null;
+  return (accessToken !== null || clubAccessToken !== null) && gapi.client.getToken() !== null;
 };
 
 // Get current user

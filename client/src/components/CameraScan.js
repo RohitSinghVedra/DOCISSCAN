@@ -24,11 +24,13 @@ const CameraScan = ({ user }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isSignedIn()) {
+    // For club users, Google Sheets is automatically configured
+    // For regular users, check if Google is connected
+    if (user?.userType !== 'club' && !isSignedIn()) {
       toast.warning('Please connect your Google account first to save documents');
       navigate('/dashboard');
     }
-  }, [navigate]);
+  }, [navigate, user]);
 
   const stopCamera = () => {
     if (stream) {
@@ -197,7 +199,9 @@ const CameraScan = ({ user }) => {
   };
 
   const handleSave = async () => {
-    if (!isSignedIn()) {
+    // For club users, check club's spreadsheet
+    // For regular users, check if Google is connected
+    if (user?.userType !== 'club' && !isSignedIn()) {
       toast.error('Please connect Google account first');
       navigate('/dashboard');
       return;
@@ -206,17 +210,28 @@ const CameraScan = ({ user }) => {
     setLoading(true);
     
     try {
-      // Get user's spreadsheet ID
-      const userDocRef = doc(db, 'users', user.id);
-      const userDoc = await getDoc(userDocRef);
+      let spreadsheetId;
       
-      if (!userDoc.exists() || !userDoc.data().spreadsheetId) {
-        toast.error('Spreadsheet not found. Please connect Google account again.');
-        navigate('/dashboard');
-        return;
+      if (user?.userType === 'club') {
+        // Club users use their club's spreadsheet
+        if (!user.spreadsheetId) {
+          toast.error('Nightclub spreadsheet not configured. Please contact admin.');
+          return;
+        }
+        spreadsheetId = user.spreadsheetId;
+      } else {
+        // Regular users get spreadsheet from Firestore
+        const userDocRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (!userDoc.exists() || !userDoc.data().spreadsheetId) {
+          toast.error('Spreadsheet not found. Please connect Google account again.');
+          navigate('/dashboard');
+          return;
+        }
+        
+        spreadsheetId = userDoc.data().spreadsheetId;
       }
-      
-      const spreadsheetId = userDoc.data().spreadsheetId;
       
       // Prepare data for saving
       const dataToSave = {

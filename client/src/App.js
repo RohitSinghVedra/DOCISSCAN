@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './components/LoginFirebase';
-import Register from './components/RegisterFirebase';
+import ClubLogin from './components/ClubLogin';
+import AdminLogin from './components/AdminLogin';
+import AdminDashboard from './components/AdminDashboard';
 import Dashboard from './components/Dashboard';
 import CameraScan from './components/CameraScan';
 import DocumentList from './components/DocumentList';
@@ -18,10 +19,14 @@ function App() {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+    if (savedUser) {
+      const userData = JSON.parse(savedUser);
+      setUser(userData);
       setIsAuthenticated(true);
+      // Token is optional for club users
+      if (savedToken) {
+        setToken(savedToken);
+      }
     }
   }, []);
 
@@ -29,7 +34,9 @@ function App() {
     setToken(newToken);
     setUser(userData);
     setIsAuthenticated(true);
-    localStorage.setItem('token', newToken);
+    if (newToken) {
+      localStorage.setItem('token', newToken);
+    }
     localStorage.setItem('user', JSON.stringify(userData));
   };
 
@@ -41,6 +48,10 @@ function App() {
     localStorage.removeItem('user');
   };
 
+  // Check if user is admin (for now, check if email contains 'admin' or is in admin list)
+  // Admin uses Google Sign-In - we'll create a simple admin login component
+  const isAdmin = user?.userType === 'admin' || (user?.email && user.email.includes('admin'));
+
   return (
     <Router>
       <div className="App">
@@ -49,8 +60,16 @@ function App() {
             path="/login" 
             element={
               isAuthenticated ? 
-              <Navigate to="/dashboard" /> : 
+              <Navigate to={isAdmin ? "/admin" : "/dashboard"} /> : 
               <Login onLogin={handleLogin} />
+            } 
+          />
+          <Route 
+            path="/club-login" 
+            element={
+              isAuthenticated ? 
+              <Navigate to="/dashboard" /> : 
+              <ClubLogin onLogin={handleLogin} />
             } 
           />
           <Route 
@@ -62,11 +81,27 @@ function App() {
             } 
           />
           <Route 
+            path="/admin-login" 
+            element={
+              isAuthenticated && isAdmin ? 
+              <Navigate to="/admin" /> : 
+              <AdminLogin onLogin={handleLogin} />
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              isAuthenticated && isAdmin ? 
+              <AdminDashboard user={user} onLogout={handleLogout} /> : 
+              <Navigate to="/admin-login" />
+            } 
+          />
+          <Route 
             path="/dashboard" 
             element={
               isAuthenticated ? 
               <Dashboard user={user} onLogout={handleLogout} /> : 
-              <Navigate to="/login" />
+              <Navigate to="/club-login" />
             } 
           />
           <Route 
@@ -74,7 +109,7 @@ function App() {
             element={
               isAuthenticated ? 
               <CameraScan token={token} user={user} /> : 
-              <Navigate to="/login" />
+              <Navigate to="/club-login" />
             } 
           />
           <Route 
@@ -82,10 +117,12 @@ function App() {
             element={
               isAuthenticated ? 
               <DocumentList token={token} /> : 
-              <Navigate to="/login" />
+              <Navigate to="/club-login" />
             } 
           />
-          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/" element={<Navigate to="/club-login" />} />
+          <Route path="/login" element={<Navigate to="/club-login" />} />
+          <Route path="/register" element={<Navigate to="/club-login" />} />
         </Routes>
         <ToastContainer position="top-center" />
       </div>

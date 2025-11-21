@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet } from '../services/googleAuth';
+import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet, useClubToken } from '../services/googleAuth';
 import { db } from '../firebase-config';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { getClubById } from '../services/adminService';
 
 const Dashboard = ({ user, onLogout }) => {
   const [googleConnected, setGoogleConnected] = useState(false);
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const isClubUser = user?.userType === 'club';
 
   useEffect(() => {
     checkGoogleStatus();
@@ -19,24 +21,82 @@ const Dashboard = ({ user, onLogout }) => {
   const checkGoogleStatus = async () => {
     try {
       await initGoogleAPI();
-      const signedIn = isSignedIn();
-      setGoogleConnected(signedIn);
 
-      if (signedIn) {
-        // Check if user has a spreadsheet in Firestore
-        const userDocRef = doc(db, 'users', user.id);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists() && userDoc.data().spreadsheetUrl) {
-          setSpreadsheetUrl(userDoc.data().spreadsheetUrl);
+      // For club users, use their pre-configured Gmail account
+      if (isClubUser) {
+        const club = await getClubById(user.id);
+        
+        if (club && club.gmailAccessToken) {
+          try {
+            await useClubToken(club.gmailAccessToken);
+            setGoogleConnected(true);
+            
+            // Use club's spreadsheet if available
+            if (club.spreadsheetId && club.spreadsheetUrl) {
+              setSpreadsheetUrl(club.spreadsheetUrl);
+            } else {
+              // Create spreadsheet for club if it doesn't exist
+              await initializeClubSpreadsheet(club);
+            }
+          } catch (error) {
+            console.error('Error using club token:', error);
+            toast.error('Failed to connect to club Gmail account. Please contact admin.');
+          }
+          } else {
+            toast.warning('Nightclub Gmail account not configured. Please contact admin.');
+          }
+      } else {
+        // Regular user flow
+        const signedIn = isSignedIn();
+        setGoogleConnected(signedIn);
+
+        if (signedIn) {
+          // Check if user has a spreadsheet in Firestore
+          const userDocRef = doc(db, 'users', user.id);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists() && userDoc.data().spreadsheetUrl) {
+            setSpreadsheetUrl(userDoc.data().spreadsheetUrl);
+          }
         }
       }
     } catch (error) {
       console.error('Error checking Google status:', error);
-      // If Google API not loaded yet, that's okay - user hasn't connected yet
+    }
+  };
+
+  const initializeClubSpreadsheet = async (club) => {
+    try {
+      // Note: For Google Sheets API, we need OAuth tokens, not password
+      // The Gmail password stored is for reference only
+      // In production, you'll need to either:
+      // 1. Use Google Service Account (recommended)
+      // 2. Generate OAuth tokens manually and store them
+      // 3. Implement token generation using stored credentials (requires backend)
+      
+      const result = await createSpreadsheet(`${club.name} - ID Scans`);
+      
+      // Update club document with spreadsheet info
+      const { updateClub } = await import('../services/adminService');
+      await updateClub(club.id, {
+        spreadsheetId: result.spreadsheetId,
+        spreadsheetUrl: result.spreadsheetUrl
+      });
+      
+      setSpreadsheetUrl(result.spreadsheetUrl);
+      toast.success('Spreadsheet created for your nightclub!');
+    } catch (error) {
+      console.error('Error creating nightclub spreadsheet:', error);
+      toast.error('Failed to create spreadsheet. Please contact admin to configure Gmail OAuth tokens.');
     }
   };
 
   const handleGoogleConnect = async () => {
+    // Club users don't need to connect - they use pre-configured Gmail
+    if (isClubUser) {
+      toast.info('Your club Gmail account is already configured by admin.');
+      return;
+    }
+
     setLoading(true);
     try {
       // Sign in to Google using OAuth 2.0
@@ -98,16 +158,31 @@ const Dashboard = ({ user, onLogout }) => {
 
       <div className="container">
         <div className="card">
-          <h2 style={{marginBottom: '20px'}}>Welcome, {user?.email}</h2>
+          <h2 style={{marginBottom: '20px'}}>
+            Welcome, {isClubUser ? user?.name : user?.email}
+          </h2>
+          
+          {isClubUser && (
+            <div style={{marginBottom: '16px', padding: '12px', background: '#e3f2fd', borderRadius: '8px'}}>
+              <p style={{margin: 0, fontSize: '14px', color: '#1976d2'}}>
+                🏢 Nightclub: {user?.name}
+              </p>
+            </div>
+          )}
           
           <div style={{marginBottom: '24px'}}>
             <p style={{marginBottom: '10px'}}>Google Account Status:</p>
             <span className={`status-badge ${googleConnected ? 'connected' : 'disconnected'}`}>
               {googleConnected ? '✓ Connected' : '✗ Not Connected'}
             </span>
+            {isClubUser && googleConnected && (
+              <p style={{marginTop: '8px', fontSize: '12px', color: '#666'}}>
+                Using nightclub Gmail: {user?.gmail}
+              </p>
+            )}
           </div>
 
-          {!googleConnected && (
+          {!googleConnected && !isClubUser && (
             <button 
               className="btn btn-primary" 
               onClick={handleGoogleConnect} 

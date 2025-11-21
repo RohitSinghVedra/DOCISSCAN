@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase-config';
 import { toast } from 'react-toastify';
+import './Login.css';
 
-const LoginFirebase = ({ onLogin }) => {
+const AdminLogin = ({ onLogin }) => {
   const navigate = useNavigate();
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -16,15 +17,25 @@ const LoginFirebase = ({ onLogin }) => {
       const result = await signInWithPopup(auth, provider);
       const token = await result.user.getIdToken();
       
+      // Check if user is admin (email contains 'admin')
+      const isAdmin = result.user.email?.includes('admin');
+      
+      if (!isAdmin) {
+        toast.error('Access denied. Admin access required.');
+        await auth.signOut();
+        return;
+      }
+      
       onLogin(token, {
         id: result.user.uid,
-        email: result.user.email
+        email: result.user.email,
+        userType: 'admin'
       });
       
-      toast.success('Signed in successfully!');
-      navigate('/dashboard');
+      toast.success('Admin login successful!');
+      navigate('/admin');
     } catch (error) {
-      toast.error(error.message || 'Sign in failed');
+      toast.error(error.message || 'Admin login failed');
     } finally {
       setLoading(false);
     }
@@ -35,13 +46,13 @@ const LoginFirebase = ({ onLogin }) => {
       <div className="container">
         <div className="card">
           <div className="card-header">
-            <h1>📱 IDDocScan</h1>
-            <p>Document Scanner for Indian IDs</p>
+            <h1>🔐 Admin Login</h1>
+            <p>IDDocScan Administration</p>
           </div>
           
           <div style={{textAlign: 'center', padding: '40px 20px'}}>
             <p style={{marginBottom: '30px', color: '#666'}}>
-              Sign in with your Google account
+              Sign in with your admin Google account
             </p>
             <button 
               onClick={handleGoogleSignIn} 
@@ -53,8 +64,8 @@ const LoginFirebase = ({ onLogin }) => {
             </button>
             
             <div style={{marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e0e0e0'}}>
-              <p style={{color: '#666', fontSize: '14px', marginBottom: '10px'}}>
-                Club user? <a href="/club-login" style={{color: '#667eea'}}>Login here</a>
+              <p style={{color: '#666', fontSize: '14px'}}>
+                Nightclub user? <a href="/club-login" style={{color: '#667eea'}}>Login here</a>
               </p>
             </div>
           </div>
@@ -64,4 +75,5 @@ const LoginFirebase = ({ onLogin }) => {
   );
 };
 
-export default LoginFirebase;
+export default AdminLogin;
+
