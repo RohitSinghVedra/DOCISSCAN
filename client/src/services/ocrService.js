@@ -11,11 +11,14 @@ const performOCRSpace = async (imageFile) => {
   try {
     const formData = new FormData();
     formData.append('file', imageFile);
-    formData.append('language', 'eng'); // English
+    formData.append('language', 'eng+hin'); // English + Hindi (Devanagari) for Indian documents
     formData.append('isOverlayRequired', 'false');
     formData.append('detectOrientation', 'true');
     formData.append('scale', 'true');
     formData.append('OCREngine', '2'); // Engine 2 is more accurate
+    formData.append('detectCheckbox', 'false');
+    formData.append('isCreateSearchablePdf', 'false');
+    formData.append('isSearchablePdfHideTextLayer', 'false');
     
     // Optional API key - if provided, use it (prevents 403 errors)
     const API_KEY = process.env.REACT_APP_OCR_SPACE_API_KEY;
@@ -258,53 +261,61 @@ const cleanText = (text) => {
     .trim();
 };
 
-// Identify document type based on text content (more flexible patterns)
+// Identify document type based on text content - optimized for Indian documents
 const identifyDocumentType = (text) => {
   const upperText = cleanText(text).toUpperCase();
+  const originalText = text;
   
-  // Check for Passport - multiple indicators including MRZ line
-  if (upperText.includes('PASSPORT') || 
-      upperText.includes('पासपोर्ट') ||
-      /P<[A-Z]{3}/.test(text) ||  // MRZ line pattern: P<IND
-      upperText.includes('REPUBLIC OF INDIA') ||
-      upperText.includes('P<INDIAN') ||
-      /\$\d{7,8}/.test(text) ||  // Passport number pattern: $1234567
-      /[A-Z]\d{7,8}\b/.test(upperText)) {  // Format like A1234567
-    return 'passport';
+  // Check for Aadhaar - most distinctive patterns first
+  // Aadhaar has: "GOVERNMENT OF INDIA", "AADHAAR", "मेरा आधार, मेरी पहचान", 12-digit number
+  if ((upperText.includes('AADHAAR') || upperText.includes('आधार') || upperText.includes('AADHAR')) &&
+      (upperText.includes('GOVERNMENT OF INDIA') || upperText.includes('भारत सरकार'))) {
+    return 'aadhaar';
   }
-  
-  // Check for Aadhaar
-  if (upperText.includes('AADHAAR') || 
-      upperText.includes('आधार') ||
-      upperText.includes('AADHAR') ||
-      /\d{4}\s?\d{4}\s?\d{4}/.test(text)) {  // Aadhaar number pattern
+  // Also check for 12-digit pattern (4-4-4 format) which is unique to Aadhaar
+  if (/\d{4}\s\d{4}\s\d{4}/.test(text) && !upperText.includes('PAN') && !upperText.includes('PASSPORT')) {
     return 'aadhaar';
   }
   
-  // Check for PAN
-  if (upperText.includes('PERMANENT ACCOUNT NUMBER') || 
-      upperText.includes('पैन') ||
-      upperText.includes('PAN') ||
-      upperText.includes('INCOME TAX') ||
-      /[A-Z]{5}\d{4}[A-Z]/.test(upperText)) {  // PAN format: ABCDE1234F
+  // Check for PAN - distinctive patterns
+  // PAN has: "INCOME TAX DEPARTMENT", "PERMANENT ACCOUNT NUMBER", "स्थायी लेखा संख्या", PAN format ABCDE1234F
+  if ((upperText.includes('INCOME TAX') || upperText.includes('आयकर विभाग')) &&
+      (upperText.includes('PERMANENT ACCOUNT NUMBER') || upperText.includes('स्थायी लेखा संख्या') || upperText.includes('PAN'))) {
+    return 'pan';
+  }
+  // Also check for PAN number format (10 characters: 5 letters + 4 digits + 1 letter)
+  if (/[A-Z]{5}\d{4}[A-Z]/.test(upperText) && !upperText.includes('AADHAAR') && !upperText.includes('PASSPORT')) {
     return 'pan';
   }
   
-  // Check for Driving License
-  if (upperText.includes('DRIVING LICENSE') || 
-      upperText.includes('ड्राइविंग लाइसेंस') ||
-      upperText.includes('DRIVING LICENCE') ||
-      upperText.includes('DL NO') ||
-      /[A-Z]{2}\d{2}\d{4}\d{7}/.test(upperText)) {  // DL format: XXYYNNNNNNNNNNN
+  // Check for Passport - distinctive patterns
+  // Passport has: "REPUBLIC OF INDIA", "PASSPORT", MRZ line (P<IND...), passport number (7-9 digits)
+  if (upperText.includes('PASSPORT') || upperText.includes('पासपोर्ट') || /P<[A-Z]{3}/.test(originalText)) {
+    return 'passport';
+  }
+  // Also check for passport number pattern near "REPUBLIC OF INDIA"
+  if (upperText.includes('REPUBLIC OF INDIA') && (/\d{7,9}/.test(text) || /[A-Z]\d{7,9}/.test(upperText))) {
+    return 'passport';
+  }
+  
+  // Check for Driving License - distinctive patterns
+  // DL has: "DRIVING LICENSE", "MOTOR VEHICLES", DL number format (XXYYNNNNNNNNNNN)
+  if ((upperText.includes('DRIVING LICENSE') || upperText.includes('DRIVING LICENCE') || upperText.includes('ड्राइविंग लाइसेंस')) &&
+      (upperText.includes('MOTOR') || upperText.includes('VEHICLES') || upperText.includes('TRANSPORT'))) {
+    return 'driving_license';
+  }
+  // Also check for DL number format (2 letters + 2 digits + 4 digits + 7 digits = 15 characters)
+  if (/[A-Z]{2}\d{2}\d{4}\d{7}/.test(upperText) && !upperText.includes('PAN') && !upperText.includes('AADHAAR')) {
     return 'driving_license';
   }
   
-  // Check for Voter ID
-  if (upperText.includes('VOTER') || 
-      upperText.includes('मतदाता') ||
-      upperText.includes('EPIC') ||
-      upperText.includes('ELECTOR') ||
-      /[A-Z]{3}\d{7}/.test(upperText)) {  // Voter ID format: XXX1234567
+  // Check for Voter ID - distinctive patterns
+  if ((upperText.includes('VOTER') || upperText.includes('मतदाता') || upperText.includes('EPIC')) &&
+      (upperText.includes('ELECTION') || upperText.includes('COMMISSION'))) {
+    return 'voter_id';
+  }
+  // Also check for Voter ID format (3 letters + 7 digits)
+  if (/[A-Z]{3}\d{7}/.test(upperText) && !upperText.includes('PAN') && !upperText.includes('AADHAAR')) {
     return 'voter_id';
   }
   
@@ -331,74 +342,91 @@ const extractDocumentData = (text, documentType) => {
   }
 };
 
-// Extract Aadhaar card data
+// Extract Aadhaar card data - optimized for actual Aadhaar card layout
 const extractAadhaarData = (text) => {
   const data = {};
+  const cleanedText = cleanText(text);
   
-  // Extract Aadhaar number (12 digits in various formats)
+  // Extract Aadhaar number (12 digits - most prominent on card)
+  // Pattern: 4 digits space 4 digits space 4 digits (e.g., "3400 9872 2377")
   const aadhaarPatterns = [
-    /\b\d{4}\s\d{4}\s\d{4}\b/,  // Space separated
-    /\b\d{12}\b/,  // No spaces
-    /(?:Aadhaar|आधार)[:\s]*(\d{4}\s?\d{4}\s?\d{4})/i,
-    /\b(\d{4}[-]\d{4}[-]\d{4})\b/  // Hyphen separated
+    /\b(\d{4}\s\d{4}\s\d{4})\b/,  // Space separated (most common)
+    /\b(\d{4}[-]\d{4}[-]\d{4})\b/,  // Hyphen separated
+    /\b(\d{12})\b/,  // No spaces (fallback)
+    /(?:Aadhaar|आधार|AADHAAR)[:\s]*(\d{4}\s?\d{4}\s?\d{4})/i
   ];
   
   for (const pattern of aadhaarPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      data.aadhaarNumber = (match[1] || match[0]).replace(/\s/g, ' ');
-      break;
+      const aadhaarNum = (match[1] || match[0]).trim();
+      // Validate: should be 12 digits total
+      if (aadhaarNum.replace(/\s|-/g, '').length === 12) {
+        data.aadhaarNumber = aadhaarNum.replace(/-/g, ' '); // Normalize to spaces
+        break;
+      }
     }
   }
   
-  // Extract Name - multiple patterns for Hindi/English
+  // Extract Name - Look for Hindi name followed by English name
+  // Pattern: Hindi name (Devanagari) followed by English name in ALL CAPS
   const namePatterns = [
-    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /(?:गया नाम|Given Name)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,  // Three word names
-    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/  // Two word names
+    // Hindi name pattern: "विजय कुमार अग्रवाल" followed by "VIJAY KUMAR AGGRAWAL"
+    /([\u0900-\u097F\s]{5,})\s+([A-Z][A-Z\s]{4,})/,
+    // English name after "नाम" or "Name"
+    /(?:नाम|Name)[:\s]+([A-Z][A-Z\s]{4,})/i,
+    // Direct English name pattern (2-4 words, all caps, min 5 chars each)
+    /\b([A-Z][A-Z]{4,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)\b(?=\s|$|\d|DOB|जन्म|Gender|पुरुष|महिला)/,
+    // Fallback: any 2-3 word uppercase name
+    /\b([A-Z][A-Z]{3,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)\b/
   ];
   
   for (const pattern of namePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      let name = (match[1] || match[0]).trim();
+      // Use English name (second match) if Hindi+English pattern, otherwise use first match
+      let name = (match[2] || match[1] || match[0]).trim().toUpperCase();
       // Skip false positives
-      if (!name.match(/^(REPUBLIC|OF|INDIA|AADHAAR|आधार|GOVERNMENT|GOVT)$/i)) {
+      if (!name.match(/^(REPUBLIC|OF|INDIA|AADHAAR|आधार|GOVERNMENT|GOVT|GOVERNMENT OF|DOWNLOAD|ISSUE|DATE|VID|MOBILE|मेरा|आधार|मेरी|पहचान)$/i) &&
+          name.length >= 5 &&
+          name.split(/\s+/).length >= 2 &&
+          !name.match(/^\d/)) {
         data.name = name;
         break;
       }
     }
   }
   
-  // Extract Date of Birth - multiple patterns
+  // Extract Date of Birth - Format: "जन्म तारीख/DOB: 04/04/1985" or "18/04/1985"
   const dobPatterns = [
-    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि|Year\s+of\s+Birth)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
-    /(?:DOB)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})/i,
-    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|DOB)/i,
-    /(?:Birth|जन्म)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i
+    /(?:जन्म\s+तारीख|DOB|Date\s+of\s+Birth)[:\s/]*(\d{2}[-/]\d{2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:DOB|जन्म|Birth)/i,
+    // Direct pattern: DD/MM/YYYY or DD-MM-YYYY
+    /\b(\d{2}[-/]\d{2}[-/]\d{4})\b(?=\s|$|Gender|पुरुष|महिला|MALE|FEMALE)/
   ];
   
   for (const pattern of dobPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const date = match[1] || match[0];
-      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+      // Validate date format and reasonable year (1900-2010 for DOB)
+      const year = parseInt(date.split(/[-/]/)[2]);
+      if (date.match(/\d{2}[-/]\d{2}[-/]\d{4}/) && year >= 1900 && year <= 2010) {
         data.dateOfBirth = date;
         break;
       }
     }
   }
   
-  // Extract Gender - multiple patterns including Hindi
+  // Extract Gender - Pattern: "पुरुष/ MALE" or "महिला/ FEMALE" or "MALE" or "FEMALE"
   const genderPatterns = [
-    /(?:Gender|Sex)[:\s]+([MF]|Male|Female|पुरुष|महिला)/i,
-    /(?:Male|Female|पुरुष|महिला)[:\s]*([MF])/i,
-    /\b([MF])\b(?:\s|.*?)(?:Gender|Sex)/i
+    /(?:पुरुष|MALE|Male)[:\s/]*([MF]|MALE|FEMALE|Male|Female)/i,
+    /(?:महिला|FEMALE|Female)[:\s/]*([MF]|MALE|FEMALE|Male|Female)/i,
+    /\b([MF]|MALE|FEMALE)\b(?=\s|$|Gender|Sex|पुरुष|महिला)/i
   ];
   
   for (const pattern of genderPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const gender = (match[1] || match[0]).toUpperCase();
       if (gender === 'M' || gender === 'MALE' || gender.includes('पुरुष')) {
@@ -410,20 +438,53 @@ const extractAadhaarData = (text) => {
     }
   }
   
-  // Extract Address - comprehensive pattern for multi-line addresses
+  // Extract Mobile Number - Pattern: "Mobile No: 9923076210" or "9923076210"
+  const mobilePatterns = [
+    /(?:Mobile\s+No|Mobile)[:\s]*(\d{10})/i,
+    /\b(\d{10})\b(?=\s|$|VID|Download|Issue)/
+  ];
+  
+  for (const pattern of mobilePatterns) {
+    const match = cleanedText.match(pattern);
+    if (match) {
+      const mobile = match[1] || match[0];
+      if (mobile.length === 10 && /^\d{10}$/.test(mobile)) {
+        data.otherInfo1 = `Mobile: ${mobile}`;
+        break;
+      }
+    }
+  }
+  
+  // Extract VID (Virtual ID) - Pattern: "VID : 9138 4815 4763 1445"
+  const vidPatterns = [
+    /VID\s*:\s*(\d{4}\s\d{4}\s\d{4}\s\d{4})/i,
+    /VID\s*:\s*(\d{16})/i
+  ];
+  
+  for (const pattern of vidPatterns) {
+    const match = cleanedText.match(pattern);
+    if (match) {
+      const vid = (match[1] || match[0]).trim();
+      if (vid.replace(/\s/g, '').length === 16) {
+        data.otherInfo2 = `VID: ${vid}`;
+        break;
+      }
+    }
+  }
+  
+  // Extract Address - Look for multi-line address after name/DOB/Gender
   const addressPatterns = [
-    /(?:Address|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,4})/i,
-    /(?:पता)[:\s]+([^\n]+(?:\n[^\n]+){0,4})/i,
-    /Address[:\s]+(.+?)(?:\n\s*\n|Aadhaar|आधार|Male|Female|Gender|जन्म)/i
+    /(?:Address|पता)[:\s]+([^\n]+(?:\n[^\n]+){0,5})/i,
+    /(?:पता)[:\s]+([^\n]+(?:\n[^\n]+){0,5})/i
   ];
   
   for (const pattern of addressPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       let address = match[1].trim();
-      // Clean up address (remove extra whitespace)
       address = address.replace(/\s+/g, ' ').replace(/\n\s*\n/g, ', ');
-      if (address.length > 10) {  // Minimum address length
+      // Exclude if it contains Aadhaar number or other identifiers
+      if (address.length > 10 && !address.match(/\d{4}\s?\d{4}\s?\d{4}/)) {
         data.address = address;
         break;
       }
@@ -431,18 +492,9 @@ const extractAadhaarData = (text) => {
   }
   
   // Extract Pincode (6 digits)
-  const pincodeMatch = text.match(/\b\d{6}\b/);
+  const pincodeMatch = cleanedText.match(/\b(\d{6})\b/);
   if (pincodeMatch) {
-    data.pincode = pincodeMatch[0];
-  }
-  
-  // Extract State/District from address context
-  const states = ['DELHI', 'MUMBAI', 'BANGALORE', 'CHENNAI', 'KOLKATA', 'HYDERABAD', 'PUNE', 'AHMEDABAD', 'JAIPUR', 'LUCKNOW', 'KANPUR', 'NAGPUR'];
-  for (const state of states) {
-    if (text.toUpperCase().includes(state)) {
-      data.state = state;
-      break;
-    }
+    data.pincode = pincodeMatch[1];
   }
   
   return data;
@@ -686,70 +738,97 @@ const extractPassportData = (text) => {
   return data;
 };
 
-// Extract PAN card data
+// Extract PAN card data - optimized for actual PAN card layout
 const extractPANData = (text) => {
   const data = {};
+  const cleanedText = cleanText(text);
 
-  // Extract PAN Number - format: ABCDE1234F
+  // Extract PAN Number - format: ABCDE1234F (10 characters, 5 letters + 4 digits + 1 letter)
+  // Handle OCR errors like Greek Alpha (Α) instead of Latin A
   const panPatterns = [
-    /\b[A-Z]{5}\d{4}[A-Z]\b/,
-    /(?:PAN|Permanent\s+Account\s+Number|पैन)[:\s]*([A-Z]{5}\d{4}[A-Z])/i,
-    /([A-Z]{5}\d{4}[A-Z])\b/
+    /\b([A-ZΑ]{5}\d{4}[A-ZΑ])\b/,  // Standard format, handle Greek Alpha
+    /(?:PAN|Permanent\s+Account\s+Number|पैन|पैन\s+नंबर)[:\s]*([A-ZΑ]{5}\d{4}[A-ZΑ])/i,
+    /([A-ZΑ]{5}\d{4}[A-ZΑ])\b/,
+    // Look for PAN near "e-Permanent Account Number Card" or "स्थायी लेखा संख्या"
+    /(?:स्थायी|Permanent)[^\n]{0,50}?([A-ZΑ]{5}\d{4}[A-ZΑ])/i
   ];
   
   for (const pattern of panPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      data.panNumber = match[1] || match[0];
-      break;
+      let pan = (match[1] || match[0]).trim();
+      // Replace Greek Alpha with Latin A if found
+      pan = pan.replace(/Α/g, 'A');
+      // Validate PAN format
+      if (/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) {
+        data.panNumber = pan;
+        break;
+      }
     }
   }
 
-  // Extract Name
+  // Extract Name - Pattern: "नाम / Name" followed by name in ALL CAPS
+  // Example: "VIJAY KUMAR AGGRAWAL"
   const namePatterns = [
-    /(?:Name|नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /(?:Income\s+Tax\s+Department)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /\b([A-Z][A-Z]{2,}\s+[A-Z]+\s+[A-Z]+)\b/,
-    /\b([A-Z][A-Z]{2,}\s+[A-Z]+)\b/
+    // Hindi + English pattern
+    /(?:नाम|Name)[:\s/]+([A-Z][A-Z\s]{4,})/i,
+    // Direct name after "Income Tax Department" or card type
+    /(?:स्थायी|Permanent|Account|Number|Card|कार्ड)[^\n]{0,30}?([A-Z][A-Z]{3,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)/,
+    // Standard 2-3 word uppercase name pattern
+    /\b([A-Z][A-Z]{3,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)\b(?=\s|$|\n|Father|पिता|Date|जन्म)/
   ];
   
   for (const pattern of namePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      let name = (match[1] || match[0]).trim();
-      if (!name.match(/^(INCOME|TAX|DEPARTMENT|PAN|GOVERNMENT|GOVT)$/i)) {
+      let name = (match[1] || match[0]).trim().toUpperCase();
+      // Skip false positives
+      if (!name.match(/^(INCOME|TAX|DEPARTMENT|PAN|GOVERNMENT|GOVT|GOVT\.|OF|INDIA|स्थायी|लेखा|संख्या|कार्ड|E-PERMANENT|PERMANENT|ACCOUNT|NUMBER|CARD)$/i) &&
+          name.length >= 5 &&
+          name.split(/\s+/).length >= 2 &&
+          !name.match(/^\d/)) {
         data.name = name;
         break;
       }
     }
   }
 
-  // Extract Father's Name
+  // Extract Father's Name - Pattern: "पिता का नाम / Father's Name" followed by name
+  // Example: "RAJENDRA PRASAD AGGRAWAL"
   const fatherNamePatterns = [
-    /(?:Father'?s?\s+Name|पिता\s+का\s+नाम)[:\s]+([A-Z][A-Z\s]{2,})/i,
-    /(?:Father)[:\s]+([A-Z][A-Z\s]{2,})/i
+    /(?:पिता\s+का\s+नाम|Father'?s?\s+Name|Father)[:\s/]+([A-Z][A-Z\s]{4,})/i,
+    /(?:Father)[:\s]+([A-Z][A-Z]{3,}\s+[A-Z][A-Z]{3,}(?:\s+[A-Z][A-Z]{3,})?)/i
   ];
   
   for (const pattern of fatherNamePatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
-      data.fatherName = (match[1] || match[0]).trim();
-      break;
+      let fatherName = (match[1] || match[0]).trim().toUpperCase();
+      // Skip if it's actually the person's name (check if it matches name pattern)
+      if (!fatherName.match(/^(INCOME|TAX|DEPARTMENT|PAN|GOVERNMENT|GOVT|Name|नाम)$/i) &&
+          fatherName.length >= 5 &&
+          fatherName.split(/\s+/).length >= 2) {
+        data.fatherName = fatherName;
+        break;
+      }
     }
   }
 
-  // Extract Date of Birth
+  // Extract Date of Birth - Pattern: "जन्म की तारीख / Date of Birth" followed by "18/04/1985"
   const dobPatterns = [
-    /(?:Date\s+of\s+Birth|DOB|जन्म\s+तिथि)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i,
-    /(?:Birth)[:\s]*(\d{2}[-/]\d{2}[-/]\d{4})\b/i,
-    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|DOB)/i
+    /(?:जन्म\s+की\s+तारीख|Date\s+of\s+Birth|DOB|Birth)[:\s/]+(\d{2}[-/]\d{2}[-/]\d{4})/i,
+    /(\d{2}[-/]\d{2}[-/]\d{4})\b(?:\s|.*?)(?:Birth|जन्म|DOB|Date)/i,
+    // Direct date pattern near birth keywords
+    /\b(\d{2}[-/]\d{2}[-/]\d{4})\b(?=\s|$|\n|Signature|हस्ताक्षर)/
   ];
   
   for (const pattern of dobPatterns) {
-    const match = text.match(pattern);
+    const match = cleanedText.match(pattern);
     if (match) {
       const date = match[1] || match[0];
-      if (date.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+      // Validate date format and reasonable year (1900-2010 for DOB)
+      const year = parseInt(date.split(/[-/]/)[2]);
+      if (date.match(/\d{2}[-/]\d{2}[-/]\d{4}/) && year >= 1900 && year <= 2010) {
         data.dateOfBirth = date;
         break;
       }
