@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet, useClubToken } from '../services/googleAuth';
+import { initGoogleAPI, signInGoogle, isSignedIn, createSpreadsheet, setClubAccessToken } from '../services/googleAuth';
 import { db } from '../firebase-config';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getClubById } from '../services/adminService';
@@ -28,7 +28,7 @@ const Dashboard = ({ user, onLogout }) => {
         
         if (club && club.gmailAccessToken) {
           try {
-            await useClubToken(club.gmailAccessToken);
+            await setClubAccessToken(club.gmailAccessToken);
             setGoogleConnected(true);
             
             // Use club's spreadsheet if available

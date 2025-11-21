@@ -61,7 +61,7 @@ function App() {
             element={
               isAuthenticated ? 
               <Navigate to={isAdmin ? "/admin" : "/dashboard"} /> : 
-              <Login onLogin={handleLogin} />
+              <AdminLogin onLogin={handleLogin} />
             } 
           />
           <Route 
@@ -70,14 +70,6 @@ function App() {
               isAuthenticated ? 
               <Navigate to="/dashboard" /> : 
               <ClubLogin onLogin={handleLogin} />
-            } 
-          />
-          <Route 
-            path="/register" 
-            element={
-              isAuthenticated ? 
-              <Navigate to="/dashboard" /> : 
-              <Register onLogin={handleLogin} />
             } 
           />
           <Route 

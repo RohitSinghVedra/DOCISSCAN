@@ -86,8 +86,8 @@ export const signOutGoogle = async () => {
   }
 };
 
-// Use club's pre-configured Gmail access token
-export const useClubToken = async (token) => {
+// Set club's pre-configured Gmail access token
+export const setClubAccessToken = async (token) => {
   try {
     clubAccessToken = token;
     

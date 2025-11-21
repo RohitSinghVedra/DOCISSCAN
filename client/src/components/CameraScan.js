@@ -243,10 +243,18 @@ const CameraScan = ({ user }) => {
       // Save to Google Sheets
       await appendToSpreadsheet(spreadsheetId, dataToSave);
       
-      const spreadsheetUrl = userDoc.data().spreadsheetUrl;
+      // Get spreadsheet URL
+      let spreadsheetUrl;
+      if (user?.userType === 'club') {
+        spreadsheetUrl = user.spreadsheetUrl;
+      } else {
+        const userDocRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userDocRef);
+        spreadsheetUrl = userDoc.exists() ? userDoc.data().spreadsheetUrl : null;
+      }
       
       toast.success('Document saved to Google Sheets!', {
-        onClick: () => window.open(spreadsheetUrl, '_blank'),
+        onClick: () => spreadsheetUrl && window.open(spreadsheetUrl, '_blank'),
         autoClose: 3000
       });
 
