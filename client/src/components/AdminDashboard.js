@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getAllClubs, createClub, updateClub, deleteClub } from '../services/adminService';
+import { signInGoogle } from '../services/googleAuth';
 import './AdminDashboard.css';
 
 const AdminDashboard = ({ user, onLogout }) => {
@@ -14,7 +15,9 @@ const AdminDashboard = ({ user, onLogout }) => {
     username: '',
     password: '',
     gmail: '',
-    gmailPassword: ''
+    gmailPassword: '',
+    gmailAccessToken: '',
+    gmailRefreshToken: ''
   });
   const navigate = useNavigate();
 
@@ -105,7 +108,9 @@ const AdminDashboard = ({ user, onLogout }) => {
       username: club.username || '',
       password: '', // Don't show existing password
       gmail: club.gmail || '',
-      gmailPassword: '' // Don't show existing Gmail password
+      gmailPassword: '', // Don't show existing Gmail password
+      gmailAccessToken: club.gmailAccessToken || '',
+      gmailRefreshToken: club.gmailRefreshToken || ''
     });
     setShowCreateModal(true);
   };
@@ -116,7 +121,9 @@ const AdminDashboard = ({ user, onLogout }) => {
       username: '',
       password: '',
       gmail: '',
-      gmailPassword: ''
+      gmailPassword: '',
+      gmailAccessToken: '',
+      gmailRefreshToken: ''
     });
     setEditingClub(null);
   };
@@ -124,6 +131,35 @@ const AdminDashboard = ({ user, onLogout }) => {
   const handleLogout = () => {
     onLogout();
     navigate('/login');
+  };
+
+  const handleGenerateTokens = async (club) => {
+    if (!club.gmail) {
+      toast.error('Gmail account not set for this nightclub');
+      return;
+    }
+
+    try {
+      toast.info('Please sign in with the nightclub Gmail account to generate tokens...', { autoClose: 5000 });
+      
+      // Open a popup window for OAuth flow
+      // Note: This requires the admin to sign in with the nightclub's Gmail account
+      const response = await signInGoogle();
+      
+      if (response && response.accessToken) {
+        // Store the access token (refresh token is not available in this flow)
+        // For refresh token, admin would need to use OAuth Playground
+        await updateClub(club.id, {
+          gmailAccessToken: response.accessToken
+        });
+        
+        toast.success('OAuth tokens generated successfully! The nightclub can now access Google Sheets.');
+        loadClubs();
+      }
+    } catch (error) {
+      console.error('Error generating tokens:', error);
+      toast.error('Failed to generate tokens. Please try using OAuth Playground method in Edit form.');
+    }
   };
 
   return (
@@ -173,6 +209,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                     <th>Nightclub Name</th>
                     <th>Username</th>
                     <th>Gmail Account</th>
+                    <th>Google Access</th>
                     <th>Spreadsheet</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -184,6 +221,13 @@ const AdminDashboard = ({ user, onLogout }) => {
                       <td>{club.name}</td>
                       <td>{club.username}</td>
                       <td>{club.gmail || 'Not set'}</td>
+                      <td>
+                        {club.gmailAccessToken ? (
+                          <span className="status-badge connected" style={{fontSize: '11px'}}>✓ Configured</span>
+                        ) : (
+                          <span className="status-badge disconnected" style={{fontSize: '11px'}}>✗ Not configured</span>
+                        )}
+                      </td>
                       <td>
                         {club.spreadsheetUrl ? (
                           <a href={club.spreadsheetUrl} target="_blank" rel="noopener noreferrer" style={{color: '#667eea'}}>
@@ -199,7 +243,7 @@ const AdminDashboard = ({ user, onLogout }) => {
                         </span>
                       </td>
                       <td>
-                        <div style={{display: 'flex', gap: '8px'}}>
+                        <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
                           <button 
                             className="btn btn-small btn-secondary" 
                             onClick={() => handleEdit(club)}
@@ -212,6 +256,16 @@ const AdminDashboard = ({ user, onLogout }) => {
                           >
                             Delete
                           </button>
+                          {!club.gmailAccessToken && (
+                            <button 
+                              className="btn btn-small" 
+                              onClick={() => handleGenerateTokens(club)}
+                              style={{background: '#4caf50', color: 'white', fontSize: '11px'}}
+                              title="Generate Google OAuth tokens"
+                            >
+                              Generate Tokens
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -290,6 +344,39 @@ const AdminDashboard = ({ user, onLogout }) => {
                   placeholder="Gmail account password"
                 />
                 <small style={{color: '#666'}}>Password for the Gmail account (stored securely, given to club owner)</small>
+              </div>
+
+              <div style={{marginTop: '24px', padding: '16px', background: '#f5f5f5', borderRadius: '8px'}}>
+                <h4 style={{marginTop: 0, marginBottom: '12px', fontSize: '14px', fontWeight: 600}}>Google OAuth Tokens (For Google Sheets Access)</h4>
+                <p style={{fontSize: '12px', color: '#666', marginBottom: '16px'}}>
+                  To enable automatic Google Sheets access, you need to generate OAuth tokens. 
+                  <br />
+                  <strong>Option 1:</strong> Use <a href="https://developers.google.com/oauthplayground/" target="_blank" rel="noopener noreferrer" style={{color: '#667eea'}}>Google OAuth Playground</a> to generate tokens.
+                  <br />
+                  <strong>Option 2:</strong> Leave blank and generate tokens later using the "Generate Tokens" button in the table.
+                </p>
+
+                <div className="form-group">
+                  <label>Access Token (Optional)</label>
+                  <input
+                    type="text"
+                    value={formData.gmailAccessToken}
+                    onChange={(e) => setFormData({...formData, gmailAccessToken: e.target.value})}
+                    placeholder="ya29.a0AfH6SMC..."
+                  />
+                  <small style={{color: '#666'}}>OAuth 2.0 Access Token for Google Sheets API</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Refresh Token (Optional)</label>
+                  <input
+                    type="text"
+                    value={formData.gmailRefreshToken}
+                    onChange={(e) => setFormData({...formData, gmailRefreshToken: e.target.value})}
+                    placeholder="1//0g..."
+                  />
+                  <small style={{color: '#666'}}>OAuth 2.0 Refresh Token (for automatic token renewal)</small>
+                </div>
               </div>
 
               <div className="modal-actions">

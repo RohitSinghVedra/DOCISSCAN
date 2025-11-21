@@ -52,6 +52,8 @@ export const createClub = async (clubData) => {
       passwordHash: hashedPassword,
       gmail: gmail.trim().toLowerCase(),
       gmailPasswordHash: hashedGmailPassword, // Store Gmail password (encrypted)
+      gmailAccessToken: clubData.gmailAccessToken || null, // OAuth access token for Google Sheets
+      gmailRefreshToken: clubData.gmailRefreshToken || null, // OAuth refresh token
       spreadsheetId: null,
       spreadsheetUrl: null,
       isActive: true,
@@ -162,6 +164,8 @@ export const updateClub = async (clubId, updates) => {
     // Add other safe updates
     if (updates.name) updateData.name = updates.name.trim();
     if (updates.gmail) updateData.gmail = updates.gmail.trim().toLowerCase();
+    if (updates.gmailAccessToken !== undefined) updateData.gmailAccessToken = updates.gmailAccessToken || null;
+    if (updates.gmailRefreshToken !== undefined) updateData.gmailRefreshToken = updates.gmailRefreshToken || null;
     
     updateData.updatedAt = serverTimestamp();
     
