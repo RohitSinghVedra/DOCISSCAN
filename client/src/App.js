@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard';
 import CameraScan from './components/CameraScan';
 import DocumentList from './components/DocumentList';
 import { ToastContainer } from 'react-toastify';
+import { isAdminEmail } from './config/adminConfig';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 
@@ -48,9 +49,8 @@ function App() {
     localStorage.removeItem('user');
   };
 
-  // Check if user is admin (for now, check if email contains 'admin' or is in admin list)
-  // Admin uses Google Sign-In - we'll create a simple admin login component
-  const isAdmin = user?.userType === 'admin' || (user?.email && user.email.includes('admin'));
+  // Check if user is admin (whitelist check)
+  const isAdmin = user?.userType === 'admin' || isAdminEmail(user?.email);
 
   return (
     <Router>

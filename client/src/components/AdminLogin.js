@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase-config';
 import { toast } from 'react-toastify';
+import { isAdminEmail } from '../config/adminConfig';
 import './Login.css';
 
 const AdminLogin = ({ onLogin }) => {
@@ -17,8 +18,8 @@ const AdminLogin = ({ onLogin }) => {
       const result = await signInWithPopup(auth, provider);
       const token = await result.user.getIdToken();
       
-      // Check if user is admin (email contains 'admin')
-      const isAdmin = result.user.email?.includes('admin');
+      // Check if user is admin (whitelist check)
+      const isAdmin = isAdminEmail(result.user.email);
       
       if (!isAdmin) {
         toast.error('Access denied. Admin access required.');
