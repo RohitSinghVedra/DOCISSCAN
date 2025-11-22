@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { processDocument } from '../services/ocrService';
-import { saveDocument } from '../services/documentService';
+import { saveDocument, isCloudBackupEnabled } from '../services/documentService';
+import { getEncryptionPassword } from '../utils/storage';
 import './CameraScan.css';
 
 const CameraScan = ({ user }) => {
@@ -205,14 +206,21 @@ const CameraScan = ({ user }) => {
         extractedData: extractedData?.extractedData || {}
       };
       
-      // Save to Firestore
+      // Get user/club IDs
       const clubId = user?.userType === 'club' ? user.id : null;
       const userId = user?.userType !== 'club' ? user.id : null;
+      const userIdForStorage = clubId || userId;
       
-      await saveDocument(dataToSave, clubId, userId);
+      // Check if cloud backup is enabled (optional)
+      const cloudBackupEnabled = await isCloudBackupEnabled(clubId, userId);
+      // Get encryption password from sessionStorage (if cloud backup enabled)
+      const encryptionPassword = cloudBackupEnabled ? getEncryptionPassword(userIdForStorage) : null;
       
-      toast.success('Document saved successfully!', {
-        autoClose: 2000
+      // Save to IndexedDB (primary) + optional encrypted Firestore backup
+      await saveDocument(dataToSave, clubId, userId, cloudBackupEnabled, encryptionPassword);
+      
+      toast.success('Document saved locally! Your data stays private on your device.', {
+        autoClose: 3000
       });
 
       // Reset everything

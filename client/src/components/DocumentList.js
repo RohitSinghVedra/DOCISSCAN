@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getClubDocuments, getUserDocuments } from '../services/documentService';
 import { exportToExcel } from '../utils/excelExport';
+import * as indexedDBService from '../services/indexedDBService';
 
 const DocumentList = ({ user }) => {
   const [documents, setDocuments] = useState([]);
@@ -18,6 +19,11 @@ const DocumentList = ({ user }) => {
   const fetchDocuments = async () => {
     try {
       setLoading(true);
+      
+      // Initialize IndexedDB first
+      await indexedDBService.initDB();
+      
+      // Fetch from IndexedDB (local storage)
       let docs = [];
       
       if (isClubUser && user?.id) {
