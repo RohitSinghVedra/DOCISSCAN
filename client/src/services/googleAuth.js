@@ -9,6 +9,9 @@ import { gapi } from 'gapi-script';
 let accessToken = null;
 let gapiInitialized = false;
 let clubAccessToken = null; // For club accounts using pre-configured Gmail
+let clubRefreshToken = null; // For club accounts - refresh token
+let CLIENT_ID = null;
+let CLIENT_SECRET = null;
 
 // Initialize Google API Client for Sheets API (no auth2)
 export const initGoogleAPI = () => {
@@ -86,10 +89,15 @@ export const signOutGoogle = async () => {
   }
 };
 
-// Set club's pre-configured Gmail access token
-export const setClubAccessToken = async (token) => {
+// Set club's pre-configured Gmail access token and refresh token
+export const setClubAccessToken = async (token, refreshToken = null) => {
   try {
     clubAccessToken = token;
+    clubRefreshToken = refreshToken;
+    
+    // Store client credentials for token refresh
+    CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+    CLIENT_SECRET = process.env.REACT_APP_GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
     
     // Initialize Google API if not already done
     await initGoogleAPI();
@@ -100,6 +108,97 @@ export const setClubAccessToken = async (token) => {
     return true;
   } catch (error) {
     console.error('Error setting club token:', error);
+    throw error;
+  }
+};
+
+// Refresh access token using refresh token
+// SECURITY NOTE: This requires CLIENT_SECRET in frontend, which is not ideal for production.
+// For production, consider using a backend service to handle token refresh.
+const refreshAccessToken = async () => {
+  if (!clubRefreshToken) {
+    throw new Error('Refresh token not available. Please regenerate tokens using OAuth Playground.');
+  }
+
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    throw new Error('OAuth credentials not configured. Please add REACT_APP_GOOGLE_CLIENT_ID and REACT_APP_GOOGLE_CLIENT_SECRET to environment variables.');
+  }
+
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        refresh_token: clubRefreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.error_description || errorData.error || response.statusText;
+      
+      // If refresh token is invalid/expired, user needs to regenerate
+      if (errorData.error === 'invalid_grant') {
+        throw new Error('Refresh token expired or invalid. Please contact admin to regenerate tokens using OAuth Playground.');
+      }
+      
+      throw new Error(`Token refresh failed: ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    clubAccessToken = data.access_token;
+    
+    // Update gapi client with new token
+    gapi.client.setToken({ access_token: clubAccessToken });
+    
+    console.log('Access token refreshed successfully');
+    return clubAccessToken;
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    throw error;
+  }
+};
+
+// Make API call with automatic token refresh on 401
+const makeAuthenticatedRequest = async (apiCall) => {
+  try {
+    return await apiCall();
+  } catch (error) {
+    // Check if it's a 401 Unauthorized error
+    // gapi.client errors can have different structures
+    const is401 = 
+      error.status === 401 || 
+      error.code === 401 || 
+      (error.result && error.result.error && error.result.error.code === 401) ||
+      (error.result && error.result.error && error.result.error.status === 'UNAUTHENTICATED') ||
+      (error.message && error.message.includes('401')) ||
+      (error.message && error.message.includes('UNAUTHENTICATED'));
+    
+    if (is401) {
+      console.log('Token expired (401 error), attempting to refresh...');
+      
+      // Only try refresh if we have a refresh token
+      if (!clubRefreshToken) {
+        throw new Error('Access token expired and no refresh token available. Please contact admin to regenerate tokens using OAuth Playground.');
+      }
+      
+      // Try to refresh the token
+      try {
+        await refreshAccessToken();
+        console.log('Retrying API call with refreshed token...');
+        // Retry the API call with new token
+        return await apiCall();
+      } catch (refreshError) {
+        console.error('Failed to refresh token:', refreshError);
+        const refreshErrorMsg = refreshError?.message || 'Unknown error';
+        throw new Error(`Authentication failed: ${refreshErrorMsg}`);
+      }
+    }
     throw error;
   }
 };
@@ -131,7 +230,7 @@ export const getCurrentUser = async () => {
 // Create a new spreadsheet for the user
 export const createSpreadsheet = async (title = 'ID Document Scans') => {
   try {
-    const response = await gapi.client.sheets.spreadsheets.create({
+    const apiCall = () => gapi.client.sheets.spreadsheets.create({
       resource: {
         properties: {
           title: title,
@@ -151,6 +250,8 @@ export const createSpreadsheet = async (title = 'ID Document Scans') => {
       }
     });
 
+    const response = await makeAuthenticatedRequest(apiCall);
+
     const spreadsheetId = response.result.spreadsheetId;
     const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
 
@@ -160,14 +261,15 @@ export const createSpreadsheet = async (title = 'ID Document Scans') => {
     return { spreadsheetId, spreadsheetUrl };
   } catch (error) {
     console.error('Error creating spreadsheet:', error);
-    throw error;
+    const errorMessage = error?.message || error?.result?.error?.message || 'Unknown error';
+    throw new Error(`Failed to create spreadsheet: ${errorMessage}`);
   }
 };
 
 // Set up headers for the spreadsheet
 const setupSpreadsheetHeaders = async (spreadsheetId) => {
   try {
-    await gapi.client.sheets.spreadsheets.values.update({
+    const apiCall = () => gapi.client.sheets.spreadsheets.values.update({
       spreadsheetId,
       range: 'Documents!A1:R1',
       valueInputOption: 'RAW',
@@ -194,6 +296,8 @@ const setupSpreadsheetHeaders = async (spreadsheetId) => {
         ]]
       }
     });
+    
+    await makeAuthenticatedRequest(apiCall);
   } catch (error) {
     console.error('Error setting up headers:', error);
   }
@@ -224,17 +328,19 @@ export const appendToSpreadsheet = async (spreadsheetId, data) => {
       data.rawText || ''
     ]];
 
-    const response = await gapi.client.sheets.spreadsheets.values.append({
+    const apiCall = () => gapi.client.sheets.spreadsheets.values.append({
       spreadsheetId,
       range: 'Documents!A2',
       valueInputOption: 'RAW',
       resource: { values }
     });
 
+    const response = await makeAuthenticatedRequest(apiCall);
     return response;
   } catch (error) {
     console.error('Error appending to spreadsheet:', error);
-    throw error;
+    const errorMessage = error?.message || error?.result?.error?.message || 'Unknown error';
+    throw new Error(`Failed to save to spreadsheet: ${errorMessage}`);
   }
 };
 

@@ -28,7 +28,8 @@ const Dashboard = ({ user, onLogout }) => {
         
         if (club && club.gmailAccessToken) {
           try {
-            await setClubAccessToken(club.gmailAccessToken);
+            // Set both access token and refresh token
+            await setClubAccessToken(club.gmailAccessToken, club.gmailRefreshToken || null);
             setGoogleConnected(true);
             
             // Use club's spreadsheet if available
@@ -40,10 +41,15 @@ const Dashboard = ({ user, onLogout }) => {
             }
           } catch (error) {
             console.error('Error using club token:', error);
-            toast.error('Failed to connect to club Gmail account. Please contact admin.');
+            const errorMsg = error?.message || 'Unknown error';
+            if (errorMsg.includes('refresh') || errorMsg.includes('401') || errorMsg.includes('expired')) {
+              toast.error('OAuth token expired. Please contact admin to regenerate tokens using OAuth Playground.');
+            } else {
+              toast.error(`Failed to connect to club Gmail account: ${errorMsg}`);
+            }
           }
           } else {
-            toast.warning('Nightclub Gmail account not configured. Please contact admin.');
+            toast.warning('Nightclub Gmail account not configured. Please contact admin to add OAuth tokens.');
           }
       } else {
         // Regular user flow
