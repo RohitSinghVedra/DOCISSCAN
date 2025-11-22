@@ -18,13 +18,7 @@ const Dashboard = ({ user, onLogout }) => {
       setLoading(true);
       let docs = [];
       
-      if (isClubUser && user?.id) {
-        docs = await getClubDocuments(user.id, 1); // Just get count
-      } else if (user?.id) {
-        docs = await getUserDocuments(user.id, 1); // Just get count
-      }
-      
-      // Get full count
+      // Get documents to count (limit to reasonable number for count)
       if (isClubUser && user?.id) {
         docs = await getClubDocuments(user.id, 1000);
       } else if (user?.id) {
@@ -34,6 +28,7 @@ const Dashboard = ({ user, onLogout }) => {
       setDocumentCount(docs.length);
     } catch (error) {
       console.error('Error loading document count:', error);
+      setDocumentCount(0);
     } finally {
       setLoading(false);
     }
