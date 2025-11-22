@@ -108,7 +108,7 @@ function App() {
             path="/documents" 
             element={
               isAuthenticated ? 
-              <DocumentList token={token} /> : 
+              <DocumentList user={user} /> : 
               <Navigate to="/club-login" />
             } 
           />

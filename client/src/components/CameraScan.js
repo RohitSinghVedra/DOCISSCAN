@@ -2,9 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { processDocument } from '../services/ocrService';
-import { appendToSpreadsheet, isSignedIn } from '../services/googleAuth';
-import { db } from '../firebase-config';
-import { doc, getDoc } from 'firebase/firestore';
+import { saveDocument } from '../services/documentService';
 import './CameraScan.css';
 
 const CameraScan = ({ user }) => {
@@ -23,14 +21,7 @@ const CameraScan = ({ user }) => {
   const canvasRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // For club users, Google Sheets is automatically configured
-    // For regular users, check if Google is connected
-    if (user?.userType !== 'club' && !isSignedIn()) {
-      toast.warning('Please connect your Google account first to save documents');
-      navigate('/dashboard');
-    }
-  }, [navigate, user]);
+  // No need to check Google connection - we save directly to Firestore
 
   const stopCamera = () => {
     if (stream) {
@@ -199,40 +190,14 @@ const CameraScan = ({ user }) => {
   };
 
   const handleSave = async () => {
-    // For club users, check club's spreadsheet
-    // For regular users, check if Google is connected
-    if (user?.userType !== 'club' && !isSignedIn()) {
-      toast.error('Please connect Google account first');
-      navigate('/dashboard');
+    if (!extractedData) {
+      toast.error('No data to save');
       return;
     }
 
     setLoading(true);
     
     try {
-      let spreadsheetId;
-      
-      if (user?.userType === 'club') {
-        // Club users use their club's spreadsheet
-        if (!user.spreadsheetId) {
-          toast.error('Nightclub spreadsheet not configured. Please contact admin.');
-          return;
-        }
-        spreadsheetId = user.spreadsheetId;
-      } else {
-        // Regular users get spreadsheet from Firestore
-        const userDocRef = doc(db, 'users', user.id);
-        const userDoc = await getDoc(userDocRef);
-        
-        if (!userDoc.exists() || !userDoc.data().spreadsheetId) {
-          toast.error('Spreadsheet not found. Please connect Google account again.');
-          navigate('/dashboard');
-          return;
-        }
-        
-        spreadsheetId = userDoc.data().spreadsheetId;
-      }
-      
       // Prepare data for saving
       const dataToSave = {
         documentType: extractedData?.documentType || 'other',
@@ -240,22 +205,14 @@ const CameraScan = ({ user }) => {
         extractedData: extractedData?.extractedData || {}
       };
       
-      // Save to Google Sheets
-      await appendToSpreadsheet(spreadsheetId, dataToSave);
+      // Save to Firestore
+      const clubId = user?.userType === 'club' ? user.id : null;
+      const userId = user?.userType !== 'club' ? user.id : null;
       
-      // Get spreadsheet URL
-      let spreadsheetUrl;
-      if (user?.userType === 'club') {
-        spreadsheetUrl = user.spreadsheetUrl;
-      } else {
-        const userDocRef = doc(db, 'users', user.id);
-        const userDoc = await getDoc(userDocRef);
-        spreadsheetUrl = userDoc.exists() ? userDoc.data().spreadsheetUrl : null;
-      }
+      await saveDocument(dataToSave, clubId, userId);
       
-      toast.success('Document saved to Google Sheets!', {
-        onClick: () => spreadsheetUrl && window.open(spreadsheetUrl, '_blank'),
-        autoClose: 3000
+      toast.success('Document saved successfully!', {
+        autoClose: 2000
       });
 
       // Reset everything
@@ -264,10 +221,10 @@ const CameraScan = ({ user }) => {
       setDocumentType(null);
       setShowPreview(false);
       
-      // Navigate back after 2 seconds
+      // Navigate back after 1.5 seconds
       setTimeout(() => {
         navigate('/dashboard');
-      }, 2000);
+      }, 1500);
 
     } catch (error) {
       console.error('Save error:', error);
